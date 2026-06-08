@@ -1,0 +1,29 @@
+qdrant-client
+sentence-transformers
+langchain
+langchain-community
+langchain-experimental
+rank-bm25
+streamlit
+pydantic
+python-dotenv
+numpy
+openai
+tqdm
+aiohttp
+
+
+# | Library                  | Purpose               |
+# | ------------------------ | --------------------- |
+# | `qdrant-client`          | connect to Qdrant     |
+# | `sentence-transformers`  | embeddings            |
+# | `langchain`              | chunking utilities    |
+# | `langchain-experimental` | semantic chunker      |
+# | `rank-bm25`              | keyword retrieval     |
+# | `streamlit`              | frontend              |
+# | `pydantic`               | data validation       |
+# | `python-dotenv`          | environment variables |
+# | `numpy`                  | score operations      |
+# | `openai`                 | GPT-4o-mini           |
+# | `aiohttp`                | async HTTP            |
+# | `tqdm`                   | progress bars         |
