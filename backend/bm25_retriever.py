@@ -1,13 +1,8 @@
+from qdrant_client import AsyncQdrantClient
 from rank_bm25 import BM25Okapi
 
-from qdrant-client import AsyncQdrantClient
-
-
 # Connect to Qdrant
-client = AsyncQdrantClient(
-    host="localhost",
-    port=6333
-)
+client = AsyncQdrantClient(host="localhost", port=6333)
 
 # Collection Name
 COLLECTION_NAME = "rag_docs"
@@ -21,7 +16,7 @@ async def bm25_search(query: str):
         collection_name=COLLECTION_NAME,
         limit=1000,
         with_payload=True,
-        with_vectors=False
+        with_vectors=False,
     )
 
     # Store Documents
@@ -29,17 +24,16 @@ async def bm25_search(query: str):
 
     # Extract Chunk Text
     for point in points:
-        documents.append({
-            "text": point.payload["text"],
-            "source": point.payload["source"],
-            "chunk_id": point.payload["chunk_id"]
-        })
+        documents.append(
+            {
+                "text": point.payload["text"],
+                "source": point.payload["source"],
+                "chunk_id": point.payload["chunk_id"],
+            }
+        )
 
     # Tokenize Documents
-    tokenized_docs = [
-        doc["text"].lower().split()
-        for doc in documents
-    ]
+    tokenized_docs = [doc["text"].lower().split() for doc in documents]
 
     # Create BM25 Index
     bm25 = BM25Okapi(tokenized_docs)
@@ -53,19 +47,17 @@ async def bm25_search(query: str):
     # Combine Docs + Scores
     results = []
     for i in range(len(documents)):
-        results.append({
-            "text": documents[i]["text"],
-            "source": documents[i]["source"],
-            "chunk_id": documents[i]["chunk_id"],
-            "score": scores[i]
-        })
+        results.append(
+            {
+                "text": documents[i]["text"],
+                "source": documents[i]["source"],
+                "chunk_id": documents[i]["chunk_id"],
+                "score": scores[i],
+            }
+        )
 
     # Sort By BM25 Score
-    results = sorted(
-        results,
-        key=lambda x: x["score"],
-        reverse=True
-    )
+    results = sorted(results, key=lambda x: x["score"], reverse=True)
 
     # Return Top 5 Results
     return results[:10]
