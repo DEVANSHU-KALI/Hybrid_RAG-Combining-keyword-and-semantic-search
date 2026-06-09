@@ -1,6 +1,6 @@
 from rank_bm25 import BM25Okapi
 
-from qdrant_client import AsyncQdrantClient
+from qdrant-client import AsyncQdrantClient
 
 
 # Connect to Qdrant
@@ -25,7 +25,7 @@ async def bm25_search(query: str):
     )
 
     # Store Documents
-    documents = []  
+    documents = []
 
     # Extract Chunk Text
     for point in points:
