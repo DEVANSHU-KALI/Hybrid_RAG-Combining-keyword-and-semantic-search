@@ -25,3 +25,27 @@ from .bm25_retriever import bm25_search
 - **What it does**: Imports the two search retrieval functions: `retrieve_chunks` (dense vector search in Qdrant) and `bm25_search` (sparse keyword search). The dot (`.`) denotes a relative import from the current directory.
 
 ---
+
+### Score Normalization Function
+```python
+def normalize_scores(results):
+    scores = [
+        result["score"]
+        for result in results
+    ]
+```
+- **Lines 6–9**: We receive a list of search result dictionaries. We use a **list comprehension** (a compact loop structure) to extract only the raw score from each search result and save them to a list named `scores`.
+
+```python
+    max_score = max(scores)
+    min_score = min(scores)
+```
+- **Lines 11–12**: We identify the highest value (`max()`) and the lowest value (`min()`) in the score list.
+
+```python
+    # Avoid Division By Zero
+    if max_score == min_score:
+        for result in results:
+            result["score"] = 1.0
+        return results
+```
