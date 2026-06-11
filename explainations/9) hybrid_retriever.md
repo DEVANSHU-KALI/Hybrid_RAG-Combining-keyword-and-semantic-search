@@ -345,3 +345,16 @@ In this script, an equal weighting ($w = 0.5$, simplified to addition without di
 $$\text{Final Score} = \text{Score}_{\text{semantic}} + \text{Score}_{\text{BM25}}$$
 
 ---
+
+## 5. Architectural Choices and Alternatives
+
+### Why Min-Max Fusion?
+The script utilizes **Min-Max Score Fusion** to merge the candidate lists. While simple and intuitive, it is sensitive to outliers. For example, a single document with an extremely high BM25 score will push the scores of other documents close to zero.
+
+#### Alternatives and Trade-offs
+
+| Strategy | Description | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **Min-Max Score Fusion** *(Chosen)* | Normalizes raw scores of both algorithms to a $[0.0, 1.0]$ range, then sums them together. | • Preserves the relative performance gaps between retrieved candidates. | • Highly sensitive to outliers (e.g., one exceptionally high score compresses all other scores). |
+| **Reciprocal Rank Fusion (RRF)** | Merges lists by ignoring raw scores entirely. It uses the rank positions (1st, 2nd, etc.) of candidates: $RRF = \sum \frac{1}{60 + \text{Rank}}$. | • Completely independent of score distributions.<br>• Extremely stable and robust against outliers. | • Discards the magnitude of score differences (e.g., treats a marginal victory the same as a landslide). |
+| **Weighted Linear Fusion** | Applies explicit importance weights (e.g., $0.7 \times \text{Semantic} + 0.3 \times \text{BM25}$) to prioritize one retriever. | • Allows fine-tuning the search behavior based on domain needs. | • Requires manual parameter tuning and evaluation to find the ideal weight. |
