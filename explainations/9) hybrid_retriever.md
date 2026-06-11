@@ -326,3 +326,22 @@ We sort them in descending order by `final_score` and slice the top 5:
 Observe how **Chunk 1** ended up at the top of the list with a perfect score of `2.0`. Because it was found independently by both semantic retrieval (conceptually relevant) and lexical retrieval (keyword matching), the system treats it as highly relevant. This hybrid retrieval design naturally prioritizes agreement between search engines.
 
 ---
+
+## 4. Deep Technical Concepts
+
+### Dense Vector Similarity Search
+This method retrieves information by converting text into a **dense vector** (a list of continuous floating-point numbers representing features in a high-dimensional space). This representation captures the conceptual meaning of words rather than their exact letters. Similarity is measured geometrically (typically using Cosine Similarity, which measures the angle between two vectors).
+
+### Sparse Lexical Search (BM25)
+This method retrieves information using a **sparse vector** (a large list of numbers representing a global vocabulary, where almost all entries are zero except for the exact words present in the document). BM25 (Best Match 25) is a statistical ranking formula that evaluates term frequency (how many times a word occurs in a document), document length normalization (penalizing long, verbose documents), and inverse document frequency (prioritizing rare words over common ones).
+
+### Score Normalization
+Because vector similarity scores and BM25 scores represent different mathematical distributions and ranges, summing them directly would heavily bias results toward the strategy producing larger raw values (usually BM25). Score normalization transforms scores from disparate retrieval runs onto a matching, comparable scale (e.g., $0.0$ to $1.0$).
+
+### Linear Score Fusion
+Linear Score Fusion is the process of combining normalized scores from multiple retrievers using a simple weighted sum:
+$$\text{Final Score} = w \cdot \text{Score}_{\text{semantic}} + (1 - w) \cdot \text{Score}_{\text{BM25}}$$
+In this script, an equal weighting ($w = 0.5$, simplified to addition without dividing by 2) is used:
+$$\text{Final Score} = \text{Score}_{\text{semantic}} + \text{Score}_{\text{BM25}}$$
+
+---
