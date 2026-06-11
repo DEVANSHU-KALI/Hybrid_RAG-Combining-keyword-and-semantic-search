@@ -63,3 +63,79 @@ def normalize_scores(results):
         )
     return results
 ```
+- **Lines 20–27**: If the scores are not all identical, we apply the standard **Min-Max Normalization formula**:
+  $$\text{Normalized Score} = \frac{\text{Current Score} - \text{Minimum Score}}{\text{Maximum Score} - \text{Minimum Score}}$$
+  This transforms all scores into a clean range between `0.0` (for the lowest raw score) and `1.0` (for the highest raw score). For example, original scores of `[8.0, 4.0, 2.0]` scale to `[1.0, 0.33, 0.0]`.
+
+---
+
+### Hybrid Search Core Function
+```python
+async def hybrid_search(query: str):
+```
+- **Line 30**: Defines the main asynchronous function `hybrid_search`. The `async` keyword allows this function to execute concurrently with other tasks instead of blocking the main thread during database or calculation delays.
+
+```python
+    # Semantic Retrieval
+    semantic_results = await retrieve_chunks(query)
+
+    # BM25 Retrieval
+    bm25_results = await bm25_search(query)
+```
+- **Lines 33–36**:
+  - Calls `retrieve_chunks` to fetch semantic search candidates.
+  - Calls `bm25_search` to fetch keyword relevance candidates.
+  - The `await` keyword tells Python to yield CPU execution to other tasks while waiting for these functions to finish their database and file processing.
+
+```python
+    # Normalize Scores
+    semantic_results = normalize_scores(semantic_results)
+    bm25_results = normalize_scores(bm25_results)
+```
+- **Lines 39–40**: We normalize the raw scores of both retrieval lists independently using our `normalize_scores` helper function.
+
+```python
+    # Combine Results
+    combined_results = {}
+```
+- **Line 43**: We initialize an empty dictionary `combined_results` to aggregate the results.
+  - *Why a dictionary?* Because we must check for and merge duplicate chunks. Using a dictionary allows us to perform fast key-lookups in $O(1)$ constant time (checking if `chunk_id` is already in the dictionary).
+
+```python
+    # Add Semantic Results
+    for result in semantic_results:
+        chunk_id = result["chunk_id"]
+        combined_results[chunk_id] = {
+            "text": result["text"],
+            "source": result["source"],
+            "chunk_id": chunk_id,
+            "semantic_score": result["score"],
+            "bm25_score": 0.0,
+            "final_score": result["score"]
+        }
+```
+- **Lines 46–55**: We loop through all the normalized semantic search results.
+  - **Line 47**: We extract the `chunk_id`, which serves as our unique identifier for deduplication.
+  - **Line 48**: We insert the chunk into the dictionary. We set its `semantic_score` and initial `final_score` to the normalized semantic score.
+  - **Line 53**: Since we haven't processed the BM25 results yet, we set `bm25_score` to `0.0`.
+
+```python
+    # Add BM25 Results
+    for result in bm25_results:
+        chunk_id = result["chunk_id"]
+
+        # If Chunk Already Exists
+        if chunk_id in combined_results:
+            combined_results[chunk_id][
+                "bm25_score"
+            ] = result["score"]
+
+            combined_results[chunk_id][
+                "final_score"
+            ] += result["score"]
+```
+- **Lines 58–69**: We iterate through the BM25 search results.
+  - **Line 62**: We perform our **duplicate check** (`if chunk_id in combined_results`).
+  - If the chunk already exists (meaning it was retrieved by both semantic search and BM25 search):
+    - We update its `bm25_score` with its normalized BM25 score.
+    - We add the normalized BM25 score to the existing `final_score` (**Simple Addition Fusion**). For example, if a chunk has a semantic score of `0.8` and a BM25 score of `0.7`, its fused `final_score` becomes `1.5`.
