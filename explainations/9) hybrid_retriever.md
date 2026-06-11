@@ -288,3 +288,41 @@ We initialize `combined_results = {}`.
      combined_results[2] = {"semantic_score": 0.0, "bm25_score": 0.0, "final_score": 0.0, ...}
      combined_results[3] = {"semantic_score": 0.0, "bm25_score": 0.0, "final_score": 0.0, ...}
      ```
+
+2. **Processing BM25 Candidates & Merging Duplicates**:
+   * **Chunk 1** is processed. The script checks `if 1 in combined_results`. Since it exists, it updates and merges scores:
+     * `bm25_score = 1.0`
+     * `final_score += 1.0` (Updated `final_score` becomes `1.0 + 1.0 = 2.0`)
+   * **Chunk 4** is processed. `if 4 in combined_results` is `False`. It is added as a new entry:
+     ```python
+     combined_results[4] = {"semantic_score": 0.0, "bm25_score": 1.0, "final_score": 1.0, ...}
+     ```
+   * **Chunk 5** is processed and added as a new entry similarly.
+
+#### Step 5: Sorting and Slicing
+The finalized dictionary values are converted to a list:
+```python
+final_results = [
+    {"chunk_id": 1, "final_score": 2.0},
+    {"chunk_id": 2, "final_score": 0.0},
+    {"chunk_id": 3, "final_score": 0.0},
+    {"chunk_id": 4, "final_score": 1.0},
+    {"chunk_id": 5, "final_score": 1.0}
+]
+```
+We sort them in descending order by `final_score` and slice the top 5:
+```python
+# Sorted List:
+[
+    {"chunk_id": 1, "final_score": 2.0},
+    {"chunk_id": 4, "final_score": 1.0},
+    {"chunk_id": 5, "final_score": 1.0},
+    {"chunk_id": 2, "final_score": 0.0},
+    {"chunk_id": 3, "final_score": 0.0}
+]
+```
+
+### Core Design Insight: Priority of Duplicates
+Observe how **Chunk 1** ended up at the top of the list with a perfect score of `2.0`. Because it was found independently by both semantic retrieval (conceptually relevant) and lexical retrieval (keyword matching), the system treats it as highly relevant. This hybrid retrieval design naturally prioritizes agreement between search engines.
+
+---
