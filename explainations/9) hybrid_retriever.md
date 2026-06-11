@@ -49,3 +49,17 @@ def normalize_scores(results):
             result["score"] = 1.0
         return results
 ```
+- **Lines 14–18**: This is our custom safeguard to handle the **division-by-zero edge case**.
+  - *The Problem*: If all retrieved candidates have the exact same score (e.g., `[8.0, 8.0, 8.0]`), then `max_score` and `min_score` are identical. In the min-max formula, the denominator becomes `max_score - min_score = 0`. Dividing by zero would crash the program (`ZeroDivisionError`).
+  - *The Solution*: If `max_score == min_score`, we bypass the formula, set all scores to `1.0` (which represents maximum normalized relevance), and return the results immediately. We treat all candidates as equally relevant.
+
+```python
+    # Min-Max Normalization
+    for result in results:
+        result["score"] = (
+            result["score"] - min_score
+        ) / (
+            max_score - min_score
+        )
+    return results
+```
