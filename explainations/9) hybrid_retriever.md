@@ -12,3 +12,16 @@ This script is responsible for:
 * Normalizing their scores to a common scale ($0.0$ to $1.0$) so they can be merged fairly.
 * Merging duplicate chunks (chunks identified by both systems) and fusing their scores together.
 * Sorting the unified candidate list and returning the top 5 candidates.
+
+---
+
+## 2. Code Walkthrough
+
+### Imports
+```python
+from .semantic_retriever import retrieve_chunks
+from .bm25_retriever import bm25_search
+```
+- **What it does**: Imports the two search retrieval functions: `retrieve_chunks` (dense vector search in Qdrant) and `bm25_search` (sparse keyword search). The dot (`.`) denotes a relative import from the current directory.
+
+---
