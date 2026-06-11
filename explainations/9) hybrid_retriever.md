@@ -139,3 +139,152 @@ async def hybrid_search(query: str):
   - If the chunk already exists (meaning it was retrieved by both semantic search and BM25 search):
     - We update its `bm25_score` with its normalized BM25 score.
     - We add the normalized BM25 score to the existing `final_score` (**Simple Addition Fusion**). For example, if a chunk has a semantic score of `0.8` and a BM25 score of `0.7`, its fused `final_score` becomes `1.5`.
+
+```python
+        # New BM25 Chunk
+        else:
+            combined_results[chunk_id] = {
+                "text": result["text"],
+                "source": result["source"],
+                "chunk_id": chunk_id,
+                "semantic_score": 0.0,
+                "bm25_score": result["score"],
+                "final_score": result["score"]
+            }
+```
+- **Line 72**: The `else` statement handles new BM25-only chunks (chunks that were not found by the semantic search). We add them as new entries in the dictionary with `semantic_score = 0.0` and `final_score = bm25_score`. This ensures both retrieval systems contribute candidates.
+
+```python
+    # Convert Dict To List
+    final_results = list(
+        combined_results.values()
+    )
+```
+- **Line 83**: We extract the dictionary values (the chunk records) and convert them back to a standard Python list.
+
+```python
+    # Sort By Final Score
+    final_results = sorted(
+        final_results,
+        key=lambda x: x["final_score"],
+        reverse=True
+    )
+
+    # Return Top Candidates
+    return final_results[:5]
+```
+- **Lines 88–95**: We sort the list of merged chunks by their `final_score` in descending order (highest score first) using a lambda function as the sort key. We use list slicing `[:5]` to return only the top 5 highest-ranking candidates.
+
+---
+
+## 3. Execution Trace Flow & Step-by-Step Walkthrough
+
+### Flow Diagram
+```
+              User Query
+                  │
+         ┌────────┴────────┐
+         ▼                 ▼
+ Semantic Retrieval    BM25 Retrieval
+   (Cosine: Cosine)    (BM25: Unbounded)
+         │                 │
+         ▼                 ▼
+ Normalize Scores      Normalize Scores
+   (Scale: 0.0 - 1.0)    (Scale: 0.0 - 1.0)
+         │                 │
+         └────────┬────────┘
+                  ▼
+         Merge Duplicate Chunks
+          (Aggregated by chunk_id)
+                  │
+                  ▼
+         Simple Addition Fusion
+          (semantic_score + bm25_score)
+                  │
+                  ▼
+         Sort By Final Score
+         (Highest score first)
+                  │
+                  ▼
+         Return Top 5 Candidates
+```
+
+---
+
+### Input and Output Specifications
+* **Input**: `query` (Type: `str`) - The search prompt typed by the user (e.g., `"what is hybrid retrieval?"`).
+* **Output**: A list containing up to 5 dictionary objects (Type: `list[dict]`). Each dictionary contains:
+  * `"text"`: The actual text string of the document chunk.
+  * `"source"`: The filename where the text originated.
+  * `"chunk_id"`: The unique integer ID of the chunk.
+  * `"semantic_score"`: The normalized semantic similarity score ($0.0$ to $1.0$).
+  * `"bm25_score"`: The normalized keyword match score ($0.0$ to $1.0$).
+  * `"final_score"`: The combined score ($0.0$ to $2.0$).
+
+---
+
+### Step-by-Step Variable Trace Walkthrough
+Let's trace the variables and execution state for a sample query: `"what is hybrid retrieval?"`.
+
+#### Step 1: Raw Search Retrieval
+Our retrievers return the following lists:
+```python
+semantic_results = [
+    {"chunk_id": 1, "text": "Hybrid retrieval combines BM25 and semantic search", "score": 0.95},
+    {"chunk_id": 2, "text": "BM25 is a ranking algorithm", "score": 0.85},
+    {"chunk_id": 3, "text": "Football players run fast", "score": 0.85}
+]
+
+bm25_results = [
+    {"chunk_id": 1, "text": "Hybrid retrieval combines BM25 and semantic search", "score": 8.0},
+    {"chunk_id": 4, "text": "Keyword retrieval improves exact matching", "score": 8.0},
+    {"chunk_id": 5, "text": "Rerankers improve retrieval quality", "score": 8.0}
+]
+```
+*(Notice that all raw BM25 scores are identical at `8.0`. This will trigger our division-by-zero safeguard).*
+
+#### Step 2: Normalizing Semantic Scores
+We call `normalize_scores(semantic_results)`:
+1. **Extract Scores**: `scores = [0.95, 0.85, 0.85]`
+2. **Find Bounds**: `max_score = 0.95`, `min_score = 0.85`.
+3. **Division Check**: `0.95 == 0.85` is `False`, so we use the normalization formula:
+   * **Chunk 1**: `(0.95 - 0.85) / (0.95 - 0.85) = 0.10 / 0.10 = 1.0`
+   * **Chunk 2**: `(0.85 - 0.85) / (0.95 - 0.85) = 0.0 / 0.10 = 0.0`
+   * **Chunk 3**: `(0.85 - 0.85) / (0.95 - 0.85) = 0.0 / 0.10 = 0.0`
+4. **Result**:
+```python
+semantic_results = [
+    {"chunk_id": 1, "score": 1.0, ...},
+    {"chunk_id": 2, "score": 0.0, ...},
+    {"chunk_id": 3, "score": 0.0, ...}
+]
+```
+
+#### Step 3: Normalizing BM25 Scores
+We call `normalize_scores(bm25_results)`:
+1. **Extract Scores**: `scores = [8.0, 8.0, 8.0]`
+2. **Find Bounds**: `max_score = 8.0`, `min_score = 8.0`.
+3. **Division Check**: `8.0 == 8.0` is `True`! 
+4. **Trigger Edge-Case Handling**: The script avoids dividing by zero by setting every score to `1.0` (representing maximum normalized relevance).
+5. **Result**:
+```python
+bm25_results = [
+    {"chunk_id": 1, "score": 1.0, ...},
+    {"chunk_id": 4, "score": 1.0, ...},
+    {"chunk_id": 5, "score": 1.0, ...}
+]
+```
+
+#### Step 4: Merging Results (The Fusing Stage)
+We initialize `combined_results = {}`.
+
+1. **Adding Semantic Candidates**:
+   * **Chunk 1** is added:
+     ```python
+     combined_results[1] = {"semantic_score": 1.0, "bm25_score": 0.0, "final_score": 1.0, ...}
+     ```
+   * **Chunk 2** and **Chunk 3** are added:
+     ```python
+     combined_results[2] = {"semantic_score": 0.0, "bm25_score": 0.0, "final_score": 0.0, ...}
+     combined_results[3] = {"semantic_score": 0.0, "bm25_score": 0.0, "final_score": 0.0, ...}
+     ```
