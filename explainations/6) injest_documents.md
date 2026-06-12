@@ -63,3 +63,52 @@ def ingest_documents(folder_path: str):
             sources.append(filename)
             counter += 1
 ```
+- **Lines 26–57**:
+  1. We initialize three storage lists: `documents` (chunk texts), `ids` (chunk IDs), and **`sources`** (chunk file sources), along with a sequential ID `counter`.
+  2. We browse the directory using `os.listdir(folder_path)`. If a file doesn't end with `".txt"`, we ignore it.
+  3. We construct the full path using `os.path.join()` and open the file in read mode with UTF-8 encoding.
+  4. We call our `text_splitter` (the semantic chunker) to divide the text file into semantic chunks.
+  5. We loop through the generated chunks, appending their text to `documents`, assigning a unique sequential ID from the `counter`, appending the current `filename` to `sources`, and incrementing the counter. This maintains an exact index correlation between text, ID, and source file.
+
+---
+
+### Ingestion Function - Part 2: Embedding Generation
+```python
+    # Print Chunks
+    print("\n======= DOCUMENT CHUNKS =======\n")
+    for doc in documents:
+        print(doc)
+        print("-------------")
+
+    # Generate Embeddings
+    embeddings = embedding_model.embed_documents(documents)
+    print(
+        "\nEmbedding vector size:",
+        len(embeddings[0])
+    )
+```
+- **Lines 62–74**:
+  - We print the raw chunk texts to the terminal for debugging.
+  - We invoke `embedding_model.embed_documents(documents)` to calculate vector embeddings.
+    - *Why this way?* We pass the entire list of chunks at once. This performs **batch embedding**, sending all documents in a single process rather than embedding them one by one. This is faster and computationally efficient.
+
+---
+
+### Ingestion Function - Part 3: Point Construction & Database Upload
+```python
+    # Create Qdrant Points
+    points = []
+
+    for i in range(len(documents)):
+        points.append(
+            PointStruct(
+                id=ids[i],
+                vector=embeddings[i],
+                payload={
+                    "text": documents[i],
+                    "source": sources[i],
+                    "chunk_id": ids[i]
+                }
+            )
+        )
+```
