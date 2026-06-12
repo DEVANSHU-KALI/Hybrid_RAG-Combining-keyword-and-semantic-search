@@ -212,3 +212,24 @@ Assume `data/rag_concepts/` contains two files: `overfitting.txt` and `bias.txt`
 
 ### Batch Embeddings
 Generating embeddings is computationally expensive. Sending text to an embedding model one string at a time introduces significant latency overhead (each call has processing initialization and transfer overhead). **Batch Embedding** bundles a list of texts into a single request, allowing the model (especially on GPUs) to process them in parallel.
+
+### Qdrant PointStruct Schema
+A **Point** in Qdrant represents a single data record. It is defined by:
+* `id`: A unique integer or UUID.
+* `vector`: The dense embedding array of floats.
+* `payload`: A JSON object storing metadata (like raw text, source filename, chunk ID). Qdrant indexes payloads, allowing vector searches to be filtered by metadata fields (e.g., searching only within a specific source file).
+
+---
+
+## 5. Architectural Choices and Alternatives
+
+### Why Batch Upsert?
+We construct a list of all points and perform a single `client.upsert()` call. This minimizes network round-trips between our application server and Qdrant.
+
+#### Alternatives and Trade-offs
+
+| Ingestion Method | Strategy | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **Batch Upsert** *(Chosen)* | Reads all files, chunks them, embeds them in one batch, and performs one upload. | • High throughput.<br>• Minimal API network overhead. | • Higher memory usage (all documents and embeddings are loaded in RAM simultaneously). |
+| **Stream Processing** | Reads, chunks, embeds, and uploads one file (or one chunk) at a time. | • Low memory footprint.<br>• Suitable for large-scale migrations. | • High latency due to repeated network calls. |
+| **Queue-Based ingestion (Celery/RabbitMQ)** | Files are added to a queue, and background workers process them asynchronously. | • Highly scalable.<br>• Handles failures gracefully. | • Significant complexity and setup overhead. |
