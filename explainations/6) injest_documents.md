@@ -168,3 +168,47 @@ def ingest_documents(folder_path: str):
                                 ▼
                        Upload (Upsert) to Qdrant
 ```
+
+---
+
+### Input and Output Specifications
+* **Input**: `folder_path` (Type: `str`) - The path to the folder containing source documents.
+* **Output**: Writes points containing IDs, embeddings, and payloads directly to Qdrant. Prints progress to the console.
+
+---
+
+### Step-by-Step Variable Trace Walkthrough
+Assume `data/rag_concepts/` contains two files: `overfitting.txt` and `bias.txt`.
+
+1. **Loop File 1 (`overfitting.txt`)**:
+   - Split into 2 chunks: Chunk A, Chunk B.
+   - `documents` becomes: `["Chunk A text", "Chunk B text"]`.
+   - `ids` becomes: `[0, 1]`.
+   - `sources` becomes: `["overfitting.txt", "overfitting.txt"]`.
+   - `counter` becomes: `2`.
+
+2. **Loop File 2 (`bias.txt`)**:
+   - Split into 1 chunk: Chunk C.
+   - `documents` becomes: `["Chunk A text", "Chunk B text", "Chunk C text"]`.
+   - `ids` becomes: `[0, 1, 2]`.
+   - `sources` becomes: `["overfitting.txt", "overfitting.txt", "bias.txt"]`.
+   - `counter` becomes: `3`.
+   - **File-reading loop completes.**
+
+3. **Batch Embedding**:
+   - `embedding_model.embed_documents(documents)` runs, returning a list of 3 vectors: `[VecA, VecB, VecC]`.
+
+4. **Point Struct Loop ($i = 0$ to $2$):**
+   - **Index $i = 0$**: Creates `PointStruct(id=0, vector=VecA, payload={"text": "Chunk A text", "source": "overfitting.txt", ...})`.
+   - **Index $i = 1$**: Creates `PointStruct(id=1, vector=VecB, payload={"text": "Chunk B text", "source": "overfitting.txt", ...})`.
+   - **Index $i = 2$**: Creates `PointStruct(id=2, vector=VecC, payload={"text": "Chunk C text", "source": "bias.txt", ...})`.
+   - *Result*: All chunks are correctly mapped to their respective source files!
+
+5. **Upload**: Upserts these 3 points to Qdrant.
+
+---
+
+## 4. Deep Technical Concepts
+
+### Batch Embeddings
+Generating embeddings is computationally expensive. Sending text to an embedding model one string at a time introduces significant latency overhead (each call has processing initialization and transfer overhead). **Batch Embedding** bundles a list of texts into a single request, allowing the model (especially on GPUs) to process them in parallel.
