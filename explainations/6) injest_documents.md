@@ -133,3 +133,38 @@ def ingest_documents(folder_path: str):
 - **Lines 97–103**: Calls `client.upsert` to upload the list of points to Qdrant. If a point has an ID that already exists in the collection, Qdrant overwrites it; otherwise, it inserts a new point.
 
 ---
+## 3. Execution Trace Flow & Step-by-Step Walkthrough
+
+### Flow Diagram
+```
+                     Folder Path: data/rag_concepts
+                                │
+                                ▼
+                       Loop Through Files
+                       (Extract filename)
+                                │
+                                ▼
+                        Read File Content
+                                │
+                                ▼
+                        Semantic Chunking
+                                │
+                ┌───────────────┼───────────────┐
+                ▼               ▼               ▼
+       Append Text to     Append ID to     Append filename
+        documents[]          ids[]          to sources[]
+                │               │               │
+                └───────────────┼───────────────┘
+                                ▼
+                       Loop Finished?
+                 ├── No  ──► Process next file
+                 └── Yes ──► Batch Embed Documents
+                                │
+                                ▼
+                     Create PointStruct Items:
+                      id=ids[i], vector=embeddings[i],
+                      payload={"text", "source": sources[i]}
+                                │
+                                ▼
+                       Upload (Upsert) to Qdrant
+```
