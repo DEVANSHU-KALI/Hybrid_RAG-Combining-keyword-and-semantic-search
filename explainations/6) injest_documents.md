@@ -112,3 +112,24 @@ def ingest_documents(folder_path: str):
             )
         )
 ```
+- **Lines 79–93**:
+  - We loop through the indices of our chunks to build `PointStruct` items.
+  - **Payload Mapping**: We map `"source": sources[i]`. This matches each chunk with the exact name of the file it was extracted from (retrieved from the `sources` index mapping), ensuring citations are accurate in downstream search queries.
+
+> [!NOTE]
+> **Developer Lesson Learned (Scope Leak Guard)**: 
+> In a previous iteration of this script, the payload was built using `"source": filename`. Because Python loops do not create block scopes, the variable `filename` leaked into the function scope and held the value of the *last file processed* by the outer loop. This caused all uploaded chunks to cite the last file read. We resolved this by introducing the `sources` list to explicitly track and align filenames to each text chunk index.
+
+```python
+    # Upload Points to Qdrant
+    client.upsert(
+        collection_name=COLLECTION_NAME,
+        points=points
+    )
+    print(
+        f"\n✅ Documents successfully ingested into '{COLLECTION_NAME}'"
+    )
+```
+- **Lines 97–103**: Calls `client.upsert` to upload the list of points to Qdrant. If a point has an ID that already exists in the collection, Qdrant overwrites it; otherwise, it inserts a new point.
+
+---
