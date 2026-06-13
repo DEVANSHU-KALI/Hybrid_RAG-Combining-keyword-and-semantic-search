@@ -135,3 +135,14 @@ Let's trace what happens when we execute `await retrieve_chunks("What is overfit
 5. **Output**: Returns the list of 10 parsed dictionary objects.
 
 ---
+
+## 4. Deep Technical Concepts
+
+### Semantic Similarity Search (Nearest Neighbor)
+Traditional databases rely on indexing keywords (e.g., searching for "overfitting" will not match "generalization failures" or "memorization of training data"). **Semantic Similarity Search** performs a mathematical nearest-neighbor search by looking at coordinates. By checking which document vectors are closest to the query vector in high-dimensional vector space, it finds conceptually related articles even if they use completely different vocabularies.
+
+### Asynchronous Database I/O Concurrency
+In typical synchronous programming, when a script requests data from a database, the entire thread blocks (waits) for the database server to process the request and send a response. This script uses **Asynchronous Concurrency** via `AsyncQdrantClient` and `await`. When querying Qdrant, the python runtime yields the active thread to process other incoming API calls, maximizing backend performance and API capacity.
+
+---
+
