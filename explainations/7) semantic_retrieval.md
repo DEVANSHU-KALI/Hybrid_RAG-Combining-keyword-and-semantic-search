@@ -29,3 +29,28 @@ COLLECTION_NAME = "rag_docs"
 - **Lines 8–13**: We establish an asynchronous connection client to the Qdrant service running at `localhost:6333` and store our collection name target as `"rag_docs"`.
 
 ---
+
+### Retrieval Logic
+```python
+async def retrieve_chunks(query: str):
+
+    # Query to Embedding
+    query_vector = embedding_model.embed_query(query)
+```
+- **Lines 19–22**:
+  - We define the asynchronous function `retrieve_chunks(query: str)`.
+  - We call `embedding_model.embed_query(query)` to convert the user's plain-text question into a list of 384 numbers representing its semantic position in vector space.
+
+```python
+    # retrieving Similar Chunks
+    results = await client.query_points(
+        collection_name=COLLECTION_NAME,
+        query=query_vector,
+        limit=10
+    )
+```
+- **Lines 25–29**:
+  - We invoke `client.query_points()` asynchronously using `await`.
+  - We query our target collection `"rag_docs"`.
+  - We pass our query embedding vector (`query_vector`) to search against all document vectors stored in the collection.
+  - `limit=10`: We restrict Qdrant to return only the top 10 closest document points based on their vector positions.
