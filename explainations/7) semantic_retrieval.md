@@ -105,3 +105,33 @@ async def retrieve_chunks(query: str):
 ```
 
 ---
+
+### Input and Output Specifications
+* **Input**: `query` (Type: `str`) - The plain-text user question (e.g., `"How does RAG work?"`).
+* **Output**: A list containing up to 10 dictionary objects (Type: `list[dict]`). Each dictionary contains:
+  * `"text"`: The retrieved chunk's text content.
+  * `"source"`: The source filename.
+  * `"chunk_id"`: The database integer ID of the chunk.
+  * `"score"`: The Cosine Similarity score ($0.0$ to $1.0$).
+
+---
+
+### Step-by-Step Variable Trace Walkthrough
+Let's trace what happens when we execute `await retrieve_chunks("What is overfitting?")`:
+
+1. **Query Input**: The function receives `query = "What is overfitting?"`.
+2. **Embedding Conversion**: `embedding_model.embed_query(query)` maps the text to a dense vector:
+   * `query_vector = [0.081, -0.023, ..., 0.045]` (length 384).
+3. **Database Query**: `client.query_points` executes:
+   - Connects asynchronously to Qdrant's query endpoint.
+   - Qdrant compares `query_vector` with all embedded vectors stored in `"rag_docs"` by calculating Cosine Similarity:
+     $$\text{Cosine Similarity} = \frac{\mathbf{query\_vector} \cdot \mathbf{document\_vector}}{\|\mathbf{query\_vector}\| \|\mathbf{document\_vector}\|}$$
+   - Returns the top 10 vectors with the highest cosine values.
+4. **Data Extraction Loop**:
+   - Loop starts over Qdrant points. For the first point:
+     * `point.payload` is `{"text": "Overfitting occurs when...", "source": "concepts.txt", "chunk_id": 1}`.
+     * `point.score` is `0.875`.
+     * Appends `{"text": "Overfitting occurs when...", "source": "concepts.txt", "chunk_id": 1, "score": 0.875}` to `results_list`.
+5. **Output**: Returns the list of 10 parsed dictionary objects.
+
+---
