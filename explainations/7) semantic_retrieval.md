@@ -146,3 +146,16 @@ In typical synchronous programming, when a script requests data from a database,
 
 ---
 
+## 5. Architectural Choices and Alternatives
+
+### Why AsyncQdrantClient?
+Using Qdrant's asynchronous client API is highly suited for web service environments (like FastAPI) since it prevents database lookups from blocking the main event loop, significantly increasing API capacity and server responsiveness.
+
+#### Alternatives and Trade-offs
+
+| Interface Client | Strategy | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **AsyncQdrantClient** *(Chosen)* | Non-blocking database calls using `async`/`await`. | • Excellent for high-throughput APIs.<br>• Integrates natively with FastAPI's async endpoints. | • Requires coding within Python's async event loop framework. |
+| **Synchronous QdrantClient** | Normal blocking requests: `client.query_points(...)`. | • Simple, linear code flow (no need for `async`/`await`). | • Blocks the server thread during database requests, reducing backend concurrent user limits. |
+| **HTTP REST Client** | Standard HTTP requests using `httpx` or `requests`. | • Requires zero database library dependencies. | • High manual implementation overhead (building raw JSON endpoints and parsing manually). |
+
