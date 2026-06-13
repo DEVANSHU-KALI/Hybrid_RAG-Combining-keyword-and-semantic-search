@@ -54,3 +54,26 @@ async def retrieve_chunks(query: str):
   - We query our target collection `"rag_docs"`.
   - We pass our query embedding vector (`query_vector`) to search against all document vectors stored in the collection.
   - `limit=10`: We restrict Qdrant to return only the top 10 closest document points based on their vector positions.
+
+```python
+    # Store Retrieved Results
+    results_list = []
+
+    # Extract Payload Data
+    for point in results.points:
+        results_list.append({
+            "text": point.payload["text"],
+            "source": point.payload["source"],
+            "chunk_id": point.payload["chunk_id"],
+            "score": point.score
+        })
+        
+    return results_list
+```
+- **Lines 32–43**:
+  - We initialize an empty list `results_list`.
+  - We iterate through all retrieved records in `results.points`.
+  - For each point, we extract the metadata stored in its payload (`text`, `source`, and `chunk_id`) along with its similarity score (`point.score`, which represents the Cosine Similarity between the query vector and the document vector).
+  - We append these key-value mappings to `results_list` and return the finalized search results.
+
+---
