@@ -77,3 +77,31 @@ async def retrieve_chunks(query: str):
   - We append these key-value mappings to `results_list` and return the finalized search results.
 
 ---
+
+## 3. Execution Trace Flow & Step-by-Step Walkthrough
+
+### Flow Diagram
+```
+                     Input Query: "How does RAG work?"
+                                │
+                                ▼
+                       Embed Query Vector
+                   (all-MiniLM -> 384 floats)
+                                │
+                                ▼
+               Async Database Query (query_points)
+                     limit=10, Cosine Distance
+                                │
+                                ▼
+                    Qdrant Cosine Similarity
+                           Evaluation
+                                │
+                                ▼
+                    Extract Matches & Payload
+                       (text, source, score)
+                                │
+                                ▼
+                    Output List of Dict Items
+```
+
+---
