@@ -108,3 +108,31 @@ else:
 ```
 
 ---
+
+### Input and Output Specifications
+* **Input**: An active Qdrant server running on `http://localhost:6333`.
+* **Output**: A collection named `"rag_docs"` configured inside the database. Prints status messages to the terminal.
+
+---
+
+### Step-by-Step Variable Trace Walkthrough
+Let's trace the execution state for a fresh database start:
+
+1. **Client Connection**: `client` initializes an active TCP socket connection to `localhost:6333`.
+2. **List Retrieval**: `client.get_collections()` returns a collection response. Let's assume the database is empty:
+   * `collections = []`
+3. **Name Parsing**: `existing_collections` evaluates to `[]`.
+4. **Conditional Check**: `collection_name ("rag_docs") not in []` evaluates to `True`.
+5. **Collection Creation**: `client.create_collection` sends a JSON payload to Qdrant's REST API:
+   ```json
+   {
+     "vectors": {
+       "size": 384,
+       "distance": "Cosine"
+     }
+   }
+   ```
+   Qdrant allocates memory, constructs a vector index structure, and registers the collection `"rag_docs"`.
+6. **Console Feedback**: Prints `"Collection 'rag_docs' created."`.
+
+---
