@@ -44,3 +44,33 @@ existing_collections = [
   3. We use a **list comprehension** to extract only the text name of each collection from the metadata objects, storing them in `existing_collections`.
 
 ---
+
+### Collection Creation Check
+```python
+if collection_name not in existing_collections:
+
+    client.create_collection(
+        collection_name=collection_name,
+        vectors_config=VectorParams(
+            size=384,
+            distance=Distance.COSINE
+        ),
+    )
+
+    print(f"Collection '{collection_name}' created.")
+
+else:
+    print(f"Collection '{collection_name}' already exists.")
+```
+- **Lines 18–31**:
+  - We run an `if` condition: `if collection_name not in existing_collections`.
+  - **If the collection is missing**:
+    - We call `client.create_collection()`.
+    - We configure `vectors_config` with a `VectorParams` object:
+      - `size=384`: We set the collection's vector dimensions to 384 (which matches the output size of our `all-MiniLM-L6-v2` embedding model).
+      - `distance=Distance.COSINE`: We choose Cosine distance as our distance metric to evaluate vector similarity.
+    - We print a message confirming that the collection was created.
+  - **If the collection already exists**:
+    - We skip the creation step to avoid overwriting existing data, and print a message confirming it is already there.
+
+---
