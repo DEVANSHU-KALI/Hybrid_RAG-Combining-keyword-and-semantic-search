@@ -74,3 +74,37 @@ else:
     - We skip the creation step to avoid overwriting existing data, and print a message confirming it is already there.
 
 ---
+
+## 3. Execution Trace Flow & Step-by-Step Walkthrough
+
+### Flow Diagram
+```
+                     Start: Run qdrant_db.py
+                                │
+                                ▼
+                   Connect to local Qdrant Host
+                      (localhost:6333)
+                                │
+                                ▼
+                     Fetch All Collections
+                                │
+                                ▼
+                     Extract Collection Names
+                                │
+                                ▼
+                 Does "rag_docs" exist in Qdrant?
+                 ├── Yes ──► Print "already exists" ──► End
+                 └── No  ──► Call client.create_collection()
+                                │
+                                ▼
+                      Configure size=384,
+                        Distance=COSINE
+                                │
+                                ▼
+                        Print "created"
+                                │
+                                ▼
+                               End
+```
+
+---
