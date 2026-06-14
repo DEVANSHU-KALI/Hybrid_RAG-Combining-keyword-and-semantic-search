@@ -136,3 +136,22 @@ Let's trace the execution state for a fresh database start:
 6. **Console Feedback**: Prints `"Collection 'rag_docs' created."`.
 
 ---
+
+## 4. Deep Technical Concepts
+
+### Vector Database
+A **vector database** (a database specifically optimized for storing, indexing, and querying multi-dimensional vector embeddings) is built to perform fast, high-dimensional similarity searches. Unlike relational databases (like MySQL) that query tables using exact matching columns, a vector database organizes data points by spatial coordinates and searches them using geometric distance.
+
+### Cosine Distance vs. Cosine Similarity
+To determine how close two text concepts are, the database evaluates the angle between their vector representations:
+* **Cosine Similarity**: Measures the cosine of the angle between two vectors. It ranges from `-1.0` (opposite directions) to `1.0` (same direction).
+* **Cosine Distance** (a mathematical metric defined as $1 - \text{Cosine Similarity}$): Evaluates differences between vectors.
+  * A Cosine Distance of `0.0` means the vectors point in the exact same direction (identical concept).
+  * A Cosine Distance of `1.0` means the vectors are perpendicular (orthogonal, sharing no semantic overlap).
+
+---
+
+## 5. Architectural Choices and Alternatives
+
+### Why Qdrant?
+Qdrant is written in Rust, making it fast and resource-efficient. It is highly suited for local developer environments because it can run inside a small Docker container and provides an excellent Python client interface.
