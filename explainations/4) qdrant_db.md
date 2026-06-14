@@ -155,3 +155,12 @@ To determine how close two text concepts are, the database evaluates the angle b
 
 ### Why Qdrant?
 Qdrant is written in Rust, making it fast and resource-efficient. It is highly suited for local developer environments because it can run inside a small Docker container and provides an excellent Python client interface.
+
+#### Alternatives and Trade-offs
+
+| Vector DB | Deployment Type | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **Qdrant** *(Chosen)* | Local (Docker) / Cloud | • Extremely fast (Rust engine).<br>• Fully-featured free local version.<br>• Supports payloads (storing raw text alongside vectors). | • Requires maintaining a running Docker container for local development. |
+| **Pinecone** | Cloud API (SaaS) | • Zero local installation or hardware management required. | • Requires internet connection.<br>• Free tier has rate limits and collection boundaries.<br>• Can become expensive at scale. |
+| **Chroma** | In-Memory (Local SQLite) | • Starts instantly inside Python code (no Docker required). | • Less performant under heavy production load.<br>• Limited clustering and scaling configurations. |
+| **pgvector** | Database Extension | • Integrates vectors directly into existing PostgreSQL databases. | • Setup can be complex.<br>• Not optimized specifically for large-scale graph search algorithms out-of-the-box. |
