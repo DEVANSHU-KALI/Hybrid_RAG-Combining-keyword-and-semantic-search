@@ -64,3 +64,37 @@ print(
 - **Lines 29–31**: Prints a terminal message confirming the reset script has finished execution.
 
 ---
+
+## 3. Execution Trace Flow & Step-by-Step Walkthrough
+
+### Flow Diagram
+```
+                     Start: Run reset_qdrant.py
+                                │
+                                ▼
+                   Connect to local Qdrant Host
+                      (localhost:6333)
+                                │
+                                ▼
+                  Begin try-except Block Execution
+                                │
+                                ▼
+                  Call client.delete_collection()
+                                │
+            ┌───────────────────┴───────────────────┐
+            ▼                                       ▼
+        Success Case                           Failure Case
+(Collection deleted successfully)       (Server offline or collection missing)
+            │                                       │
+            ▼                                       ▼
+    Print "Deleted collection..."             Print "Error deleting..."
+            │                                       │
+            └───────────────────┬───────────────────┘
+                                ▼
+                   Print "Qdrant reset complete."
+                                │
+                                ▼
+                               End
+```
+
+---
