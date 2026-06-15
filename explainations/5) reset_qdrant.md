@@ -17,3 +17,14 @@ client = QdrantClient(
     port=6333
 )
 ```
+
+- **Lines 1–7**: 
+  - We import the `QdrantClient` to establish database communication.
+  - We initialize the client by directing it to our local host (`localhost`) on port `6333`.
+
+---
+
+### Collection Reset Logic
+```python
+# Collection Name
+COLLECTION_NAME = "rag_docs"
