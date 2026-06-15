@@ -28,3 +28,20 @@ client = QdrantClient(
 ```python
 # Collection Name
 COLLECTION_NAME = "rag_docs"
+
+# Delete Collection
+try:
+    client.delete_collection(
+        collection_name=COLLECTION_NAME
+    )
+    print(
+        f"\nDeleted collection: "
+        f"{COLLECTION_NAME}"
+    )
+
+except Exception as error:
+    print(
+        f"\nError deleting collection: "
+        f"{error}"
+    )
+```
