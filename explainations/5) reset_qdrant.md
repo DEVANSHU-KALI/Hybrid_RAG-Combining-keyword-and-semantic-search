@@ -134,3 +134,16 @@ Unlike deleting individual documents (which marks vectors as deleted but leaves 
 The use of a `try-except` block is a software engineering best practice. In network-bound applications, connections can fail due to firewalls, docker failures, or misconfigured ports. By wrapping database operations in `try-except` blocks, we intercept potential runtime crashes (uncaught exceptions) and print user-friendly diagnostics instead.
 
 ---
+
+## 5. Architectural Choices and Alternatives
+
+### Why Delete Collections via Client API?
+Performing resets programmatically using the Python client library ensures that database tasks are fully integrated into our code environment, making it easy to automate resets in script tasks or pipelines.
+
+#### Alternatives and Trade-offs
+
+| Reset Method | Description | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **Python Client Drop** *(Chosen)* | Uses `client.delete_collection()` in a script. | • Automated and integrated into the Python backend code. | • Requires Qdrant server to be running and responsive. |
+| **HTTP REST API Call** | Sends an HTTP DELETE request via cURL: `DELETE http://localhost:6333/collections/rag_docs`. | • Works directly in terminal without Python. | • Requires manual construction of HTTP headers. |
+| **Docker Volume Wipe** | Deletes the docker container and data folder using `docker volume rm`. | • Guarantees complete filesystem wipe. | • Slow; requires stopping and restarting the Docker container. |
