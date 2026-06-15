@@ -98,3 +98,29 @@ print(
 ```
 
 ---
+
+### Input and Output Specifications
+* **Input**: An active connection to a local Qdrant instance.
+* **Output**: Deletes the specified collection from Qdrant. Prints deletion success or error feedback messages to the terminal.
+
+---
+
+### Step-by-Step Variable Trace Walkthrough
+Let's trace the execution steps under two different scenarios:
+
+#### Scenario A: Collection exists and Qdrant is online
+1. **Client Connection**: Connects to `localhost:6333`.
+2. **Delete Request**: Enters the `try` block and invokes `client.delete_collection(collection_name="rag_docs")`.
+3. **Database Action**: The Qdrant engine drops the index, clears the memory, deletes the underlying files, and returns a success response.
+4. **Console Output**: Prints `"\nDeleted collection: rag_docs"`.
+5. **Final Step**: Skips the `except` block and prints `"\nQdrant reset complete."`.
+
+#### Scenario B: Qdrant server is offline
+1. **Client Connection**: Attempts to initialize connection.
+2. **Delete Request**: Enters the `try` block and calls `client.delete_collection(collection_name="rag_docs")`.
+3. **Network Failure**: Since the port is unreachable, the client throws a connection error.
+4. **Exception Handling**: The program catches the error in the `except` block.
+5. **Console Output**: Prints `"\nError deleting collection: [Connection Refused...]"`.
+6. **Final Step**: Prints `"\nQdrant reset complete."`.
+
+---
