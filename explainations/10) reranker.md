@@ -115,3 +115,14 @@ async def rerank_results(query: str, retrieved_chunks: list):
 ```
 
 ---
+
+### Input and Output Specifications
+* **Input**:
+  * `query` (Type: `str`): The user question (e.g., `"what is overfitting?"`).
+  * `retrieved_chunks` (Type: `list[dict]`): A list containing up to 5 document chunks returned by the hybrid search stage.
+* **Output**: A list containing the top 3 most relevant dictionary objects (Type: `list[dict]`), sorted in descending order by `"reranker_score"`.
+
+---
+
+### Step-by-Step Variable Trace Walkthrough
+Let's trace what happens when `await rerank_results("what is overfitting?", retrieved_chunks)` is executed:
