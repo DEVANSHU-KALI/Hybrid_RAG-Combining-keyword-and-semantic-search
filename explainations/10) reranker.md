@@ -126,3 +126,18 @@ async def rerank_results(query: str, retrieved_chunks: list):
 
 ### Step-by-Step Variable Trace Walkthrough
 Let's trace what happens when `await rerank_results("what is overfitting?", retrieved_chunks)` is executed:
+
+1. **Constructing Pairs**:
+   - Query: `"what is overfitting?"`
+   - Retrieved chunks:
+     * Chunk 1: `"Overfitting occurs when a model memorizes training data."`
+     * Chunk 2: `"Rerankers improve search."`
+     * Chunk 3: `"Semantic search matches vectors."`
+   - Result:
+     ```python
+     pairs = [
+         ["what is overfitting?", "Overfitting occurs when a model memorizes training data."],
+         ["what is overfitting?", "Rerankers improve search."],
+         ["what is overfitting?", "Semantic search matches vectors."]
+     ]
+     ```
