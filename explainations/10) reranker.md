@@ -10,3 +10,20 @@ This script refines those results by:
 * Selecting and returning only the top 3 most relevant context chunks to build the final prompt for the LLM.
 
 ---
+
+## 2. Code Walkthrough
+
+### Imports and Model Loading
+```python
+from sentence_transformers import CrossEncoder
+
+# Load Cross-Encoder Model
+reranker_model = CrossEncoder(
+    "cross-encoder/ms-marco-MiniLM-L-6-v2"
+)
+```
+- **Lines 1–6**:
+  - We import the `CrossEncoder` class from the `sentence_transformers` library.
+  - We initialize our model using `"cross-encoder/ms-marco-MiniLM-L-6-v2"`. This loads the weights of a MiniLM transformer model that was pre-trained specifically on the MS-MARCO passage retrieval dataset. This model runs locally in CPU or GPU memory.
+
+---
