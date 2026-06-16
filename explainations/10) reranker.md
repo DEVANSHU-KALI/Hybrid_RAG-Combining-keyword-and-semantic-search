@@ -141,3 +141,18 @@ Let's trace what happens when `await rerank_results("what is overfitting?", retr
          ["what is overfitting?", "Semantic search matches vectors."]
      ]
      ```
+
+2. **Model Inference**:
+   - The pairs are fed into `reranker_model.predict(pairs)`.
+   - The model concatenates each pair with separation tokens: `[CLS] what is overfitting? [SEP] Overfitting occurs... [SEP]`.
+   - The model runs self-attention over the concatenated sequence. Because `"overfitting"` in the query directly matches and aligns with `"Overfitting"` and `"memorizes training data"` in Chunk 1, the model outputs a high logit score.
+   - Result: `scores = [3.85, -2.10, -1.80]`.
+3. **Updating Chunks**:
+   - Chunk 1 dictionary gains: `"reranker_score": 3.85`
+   - Chunk 2 dictionary gains: `"reranker_score": -2.10`
+   - Chunk 3 dictionary gains: `"reranker_score": -1.80`
+4. **Sorting and Slicing**:
+   - The chunks are already in descending order: `[Chunk 1 -> 3.85, Chunk 2 -> -2.10, Chunk 3 -> -1.80]`.
+   - Slicing `[:3]` returns the list of all three elements (re-sorted by the Cross-Encoder).
+
+---
