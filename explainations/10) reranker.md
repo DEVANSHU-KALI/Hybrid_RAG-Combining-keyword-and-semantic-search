@@ -156,3 +156,17 @@ Let's trace what happens when `await rerank_results("what is overfitting?", retr
    - Slicing `[:3]` returns the list of all three elements (re-sorted by the Cross-Encoder).
 
 ---
+
+## 4. Deep Technical Concepts
+
+### Bi-Encoder vs. Cross-Encoder
+Retrieval pipelines often use two types of transformer networks:
+1. **Bi-Encoders** (used in `embedding_model.py`): Encode the query and the documents independently into vectors. This allows documents to be indexed in advance. Similarity is computed using vector mathematics (cosine similarity). This is fast but doesn't allow the query and document to interact during encoding.
+2. **Cross-Encoders** (used here): Feed the query and document into the transformer network simultaneously. The self-attention layers compute relationships between every word in the query and every word in the document. This is highly accurate but computationally expensive, making it too slow to scan millions of documents in a database.
+
+### Multi-Stage Retrieval & Reranking
+To balance speed and accuracy, modern search engines use a **Multi-Stage Retrieval** architecture:
+* **Stage 1 (Retrieval)**: A fast, lightweight retriever (like our hybrid Dense Vector + BM25 search) scans millions of documents and narrows them down to a small candidate list (e.g., top 10).
+* **Stage 2 (Reranking)**: A slower, highly accurate model (the Cross-Encoder) re-evaluates the candidate list and filters them to the absolute best (e.g., top 3).
+
+---
