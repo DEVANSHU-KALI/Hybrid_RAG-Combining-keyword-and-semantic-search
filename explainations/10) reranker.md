@@ -27,3 +27,19 @@ reranker_model = CrossEncoder(
   - We initialize our model using `"cross-encoder/ms-marco-MiniLM-L-6-v2"`. This loads the weights of a MiniLM transformer model that was pre-trained specifically on the MS-MARCO passage retrieval dataset. This model runs locally in CPU or GPU memory.
 
 ---
+
+### Reranking Core Function
+```python
+async def rerank_results(query: str, retrieved_chunks: list):
+
+    # Create Query-Chunk Pairs
+    pairs = []
+
+    for chunk in retrieved_chunks:
+        pairs.append(
+            [
+                query,
+                chunk["text"]
+            ]
+        )
+```
