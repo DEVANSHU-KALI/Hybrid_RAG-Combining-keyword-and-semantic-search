@@ -82,3 +82,36 @@ async def rerank_results(query: str, retrieved_chunks: list):
   - We return the top 3 highest-scoring results using the list slice syntax `[:3]`. These top 3 documents will serve as the grounding context for the LLM.
 
 ---
+
+## 3. Execution Trace Flow & Step-by-Step Walkthrough
+
+### Flow Diagram
+```
+             Inputs: Query & List of Chunks
+                           │
+                           ▼
+                Construct [Query, Text] Pairs
+             [[Q, Text1], [Q, Text2], [Q, Text3]]
+                           │
+                           ▼
+                  Batch Cross-Encoder
+                       Inference
+                   (MiniLM Attention)
+                           │
+                           ▼
+                    Generate Logits
+                [Score1, Score2, Score3]
+                           │
+                           ▼
+              Attach Scores to original Dicts
+               (cast numpy float to float)
+                           │
+                           ▼
+                Sort Chunks Descending
+                 (Highest score first)
+                           │
+                           ▼
+                Slice & Return Top 3 Chunks
+```
+
+---
