@@ -65,3 +65,20 @@ async def rerank_results(query: str, retrieved_chunks: list):
 - **Lines 26–27**:
   - We iterate through our original list of candidate chunks.
   - For each chunk, we add a new key `"reranker_score"`. We extract the corresponding prediction value from `scores` and cast it from a NumPy float32 type to a standard Python `float` using `float()`.
+
+```python
+    # Sort By Reranker Score
+    reranked_results = sorted(
+        retrieved_chunks,
+        key=lambda x: x["reranker_score"],
+        reverse=True
+    )
+
+    # Return Top 3 Chunks
+    return reranked_results[:3]
+```
+- **Lines 30–37**:
+  - We sort the chunks in descending order (highest score first) using their new `"reranker_score"` values.
+  - We return the top 3 highest-scoring results using the list slice syntax `[:3]`. These top 3 documents will serve as the grounding context for the LLM.
+
+---
