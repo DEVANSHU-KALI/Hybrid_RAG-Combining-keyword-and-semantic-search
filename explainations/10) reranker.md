@@ -170,3 +170,16 @@ To balance speed and accuracy, modern search engines use a **Multi-Stage Retriev
 * **Stage 2 (Reranking)**: A slower, highly accurate model (the Cross-Encoder) re-evaluates the candidate list and filters them to the absolute best (e.g., top 3).
 
 ---
+
+## 5. Architectural Choices and Alternatives
+
+### Why cross-encoder/ms-marco-MiniLM-L-6-v2?
+This model is built on the MiniLM architecture (only 6 transformer layers), meaning it is highly compressed and performs inference extremely fast on standard CPUs. It has been fine-tuned on MS-MARCO (Microsoft's search dataset), making it exceptionally accurate at identifying query-passage relevance.
+
+#### Alternatives and Trade-offs
+
+| Reranker Model / API | Strategy | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **MiniLM Cross-Encoder** *(Chosen)* | Lightweight transformer running locally. | • Fast local inference (~10-50ms for small sets).<br>• Fully open-source and free. | • Limited to small input token lengths (512 tokens). |
+| **Cohere Rerank API** | Cloud-based commercial reranker service. | • State-of-the-art accuracy.<br>• Can handle very large candidate lists and contexts. | • Requires paid subscription API keys.<br>• High network latency. |
+| **LLM-as-a-Ranker** | Prompting an LLM (like GPT-4) to rank retrieved text blocks. | • Can perform complex reasoning to determine ranking. | • Extremely slow.<br>• High cost and token consumption. |
