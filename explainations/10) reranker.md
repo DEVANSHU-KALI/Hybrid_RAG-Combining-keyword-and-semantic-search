@@ -56,3 +56,12 @@ async def rerank_results(query: str, retrieved_chunks: list):
 ```
 - **Line 23**:
   - We run `reranker_model.predict(pairs)`. This passes the query-document pairs through the transformer's multi-head attention layers in a single batch, outputting a list of floating-point similarity scores (logits).
+
+```python
+    # Attach Reranker Scores
+    for i in range(len(retrieved_chunks)):
+        retrieved_chunks[i]["reranker_score"] = float(scores[i])
+```
+- **Lines 26–27**:
+  - We iterate through our original list of candidate chunks.
+  - For each chunk, we add a new key `"reranker_score"`. We extract the corresponding prediction value from `scores` and cast it from a NumPy float32 type to a standard Python `float` using `float()`.
