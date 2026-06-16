@@ -43,3 +43,16 @@ async def rerank_results(query: str, retrieved_chunks: list):
             ]
         )
 ```
+
+- **Lines 9–20**:
+  - We define the asynchronous function `rerank_results`.
+  - We initialize an empty list `pairs`.
+  - We loop through each document chunk retrieved by the hybrid search. For each candidate, we create a sub-list containing `[query, chunk["text"]]` and append it to `pairs`.
+    - *Why?* Cross-encoders do not process queries and documents in isolation. They require both texts to be concatenated together so they can analyze their intersection.
+
+```python
+    # Generate Reranker Scores
+    scores = reranker_model.predict(pairs)
+```
+- **Line 23**:
+  - We run `reranker_model.predict(pairs)`. This passes the query-document pairs through the transformer's multi-head attention layers in a single batch, outputting a list of floating-point similarity scores (logits).
