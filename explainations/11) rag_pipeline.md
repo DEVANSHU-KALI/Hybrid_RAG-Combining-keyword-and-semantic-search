@@ -73,3 +73,29 @@ async def generate_answer(query: str):
 - **Lines 25–31**: Prints metadata and scores of the top 3 documents to the console.
 
 ---
+
+### Context and Citation Building
+```python
+    # Build Context
+    context = "\n\n".join(
+        [
+            chunk["text"]
+            for chunk in reranked_chunks
+        ]
+    )
+
+    # Build Citations
+    citations = list(
+        set(
+            [
+                chunk["source"]
+                for chunk in reranked_chunks
+            ]
+        )
+    )
+```
+- **Lines 34–49**:
+  - We compile our LLM context by joining the text of the top 3 reranked chunks using double newlines (`\n\n`).
+  - We extract the source filenames of the chunks. We wrap the extraction inside `set()` to remove duplicates (e.g., if multiple chunks came from the same file) and convert it back to a standard Python `list()`.
+
+---
