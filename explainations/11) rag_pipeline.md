@@ -252,3 +252,17 @@ Llama.cpp is an open-source C/C++ execution engine designed to run quantized GGU
   5. To change the model, just replace the model name "raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF" with any other model from hugging face, as the command is for -hf.
 
 ---
+
+## 5. Architectural Choices and Alternatives
+
+### Why llama.cpp via OpenAI SDK?
+By directing the standard OpenAI SDK to our local llama.cpp endpoint, we keep our code modular. If we decide to swap our local model for a commercial cloud LLM (like GPT-4o-mini) in the future, we only need to change the `base_url` and `api_key` variables—the rest of our RAG pipeline logic remains identical.
+
+#### Alternatives and Trade-offs
+
+| Inference Server | Strategy | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **llama.cpp** *(Chosen)* | C++ compiled local server. | • High speed on consumer hardware.<br>• Minimal dependencies.<br>• Easy split CPU/GPU offloading. | • Less optimized for concurrent multi-user production load. |
+| **Ollama** | Background service manager for local models. | • Extremely user-friendly interface.<br>• Automatic model downloads and updates. | • Higher abstraction (makes it harder to tune specific model loading parameters). |
+| **OpenAI Cloud API** | Cloud-based SaaS model. | • Zero local hardware constraints.<br>• World-class intelligence. | • High costs.<br>• Network latency.<br>• Data privacy issues. |
+| **vLLM** | Enterprise-grade local server. | • Extreme throughput and speed via PagedAttention. | • Requires enterprise Linux environment and powerful NVIDIA GPUs. |
