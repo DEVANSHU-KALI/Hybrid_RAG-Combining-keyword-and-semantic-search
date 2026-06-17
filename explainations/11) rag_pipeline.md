@@ -55,3 +55,21 @@ async def generate_answer(query: str):
         retrieved_chunks
     )
 ```
+
+- **Lines 15–22**:
+  - We retrieve normalized semantic and BM25 candidate chunks by awaiting `hybrid_search(query)`.
+  - We pass these candidates to `rerank_results(query, retrieved_chunks)` to get the top 3 most relevant context blocks.
+
+```python
+    # Print Retrieved Sources
+    print("\n===== FINAL RETRIEVED CHUNKS =====\n")
+
+    for chunk in reranked_chunks:
+        print(f"Source: {chunk['source']}")
+        print(f"Chunk ID: {chunk['chunk_id']}")
+        print(f"Reranker Score: {chunk['reranker_score']}")
+        print("\n")
+```
+- **Lines 25–31**: Prints metadata and scores of the top 3 documents to the console.
+
+---
