@@ -147,3 +147,48 @@ Question:
         ]
     }
 ```
+
+- **Lines 69–90**:
+  - We call `client.chat.completions.create()` to submit the prompt.
+  - We request the model `"raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF"`, which matches the Qwen 2.5 7B model running locally via our llama.cpp server.
+  - We extract the string answer from the response object and return a structured dictionary containing the answer, deduplicated citation filenames, and raw context strings.
+
+---
+
+## 3. Execution Trace Flow & Step-by-Step Walkthrough
+
+### Flow Diagram
+```
+                     Input Query: "What is overfitting?"
+                                │
+                                ▼
+                       hybrid_search(query)
+                      [Gets Top Candidates]
+                                │
+                                ▼
+                     rerank_results(query, list)
+                       [Filters to Top 3]
+                                │
+                                ▼
+                   Deduplicate Source Citations
+                     (using set -> list)
+                                │
+                                ▼
+                    Build Prompt Context block
+                                │
+                                ▼
+                    Build Instructions Prompt
+                                │
+                                ▼
+                 Async API call to localhost:8080
+                  (Sends prompt using "dummy" key)
+                                │
+                                ▼
+                     llama.cpp Server Receives
+                    (Inference on Qwen 2.5 Q4)
+                                │
+                                ▼
+                    Extract Answer & Return
+```
+
+---
