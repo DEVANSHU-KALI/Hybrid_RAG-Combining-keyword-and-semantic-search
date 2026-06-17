@@ -119,3 +119,31 @@ Question:
 {query}
 """
 ```
+
+- **Lines 51–66**: We construct a strict **system prompt template**. We embed the retrieved context and user question, instructing the model to answer *only* using the context and to output a specific fallback error message if the answer is missing. This prevents the LLM from hallucinating answers based on its generic training data.
+
+```python
+    # Generate LLM Response
+    response = await client.chat.completions.create(
+        model="raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF",
+        messages=[
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    )
+
+    # Extract Final Answer
+    answer = response.choices[0].message.content
+
+    # Return Final Response
+    return {
+        "answer": answer,
+        "citations": citations,
+        "contexts": [
+        chunk["text"]
+        for chunk in reranked_chunks
+        ]
+    }
+```
