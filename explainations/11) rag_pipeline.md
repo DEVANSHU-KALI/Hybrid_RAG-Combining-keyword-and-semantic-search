@@ -222,3 +222,17 @@ Let's trace a run for the query: `"what is overfitting?"`.
 8. **Extraction & Return**: The answer is parsed and returned along with the citations list `["concepts.txt", "techniques.txt"]`.
 
 ---
+
+## 4. Deep Technical Concepts
+
+### Why Use a Local Model for RAG?
+Using a local, self-hosted LLM (rather than a cloud service like OpenAI's GPT-4) has multiple engineering advantages:
+1. **Model Knowledge Restrictions**: RAG systems rely on the LLM extracting information *only* from the provided context. Large public models have vast general knowledge, which makes them prone to ignoring instructions and hallucinating answers based on their pre-training. Local models with smaller parameter sizes are often more obedient to direct system instructions.
+2. **Data Privacy**: Documents are processed entirely on your local machine, ensuring no sensitive data is sent to external servers.
+3. **Cost and Independence**: No API subscription or key management is required.
+
+### Quantization & GGUF Format
+Running a modern 7-billion parameter language model in 16-bit precision requires over 14GB of video RAM (VRAM) just to load, plus extra memory for processing text.
+* **Quantization**: A compression technique that converts the model's weights from 16-bit floating-point numbers (`FP16`) to lower precision configurations, such as 4-bit integers (`Q4`). 
+* **Q4_K_M Quantization**: Reduces the model file size from ~14GB to ~4.7GB, enabling it to run smoothly on standard consumer computers with 8GB or 16GB of RAM.
+* **GGUF File Format**: A file format optimized for fast loading and running on consumer hardware using CPU, GPU, or split CPU/GPU configurations.
