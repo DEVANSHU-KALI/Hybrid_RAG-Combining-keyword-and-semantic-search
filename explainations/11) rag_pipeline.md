@@ -99,3 +99,23 @@ async def generate_answer(query: str):
   - We extract the source filenames of the chunks. We wrap the extraction inside `set()` to remove duplicates (e.g., if multiple chunks came from the same file) and convert it back to a standard Python `list()`.
 
 ---
+
+### Prompt Engineering and LLM Inference
+```python
+    # Final Prompt
+    prompt = f"""
+You are a helpful AI assistant.
+
+Answer ONLY from the provided context.
+
+If the answer is not present in the context,
+say:
+"I could not find the answer in the provided documents."
+
+Context:
+{context}
+
+Question:
+{query}
+"""
+```
