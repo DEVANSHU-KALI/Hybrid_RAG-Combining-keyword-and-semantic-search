@@ -34,3 +34,24 @@ client = AsyncOpenAI(base_url="http://localhost:8080/v1",api_key="dummy")
     - *Why `api_key="dummy"`?* We are running a local model server (llama.cpp) on our own computer, which does not require cloud authentication or API keys. However, the OpenAI Python library is programmed to throw an error if the `api_key` argument is empty. Passing `"dummy"` satisfies the SDK's validation check while routing requests to our local server.
 
 ---
+
+### Core Pipeline Orchestration
+```python
+# Main RAG Pipeline
+@traceable
+async def generate_answer(query: str):
+```
+- **Lines 12–13**: 
+  - We attach the `@traceable` decorator. This links our function execution to **LangSmith** (an LLM application monitoring platform), logging performance metrics, token usage, and retrieval latency.
+  - We define the asynchronous function `generate_answer(query: str)`.
+
+```python
+    # Hybrid Retrieval
+    retrieved_chunks = await hybrid_search(query)
+
+    # Reranking
+    reranked_chunks = await rerank_results(
+        query,
+        retrieved_chunks
+    )
+```
