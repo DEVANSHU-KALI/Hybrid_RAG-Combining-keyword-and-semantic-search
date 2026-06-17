@@ -236,3 +236,19 @@ Running a modern 7-billion parameter language model in 16-bit precision requires
 * **Quantization**: A compression technique that converts the model's weights from 16-bit floating-point numbers (`FP16`) to lower precision configurations, such as 4-bit integers (`Q4`). 
 * **Q4_K_M Quantization**: Reduces the model file size from ~14GB to ~4.7GB, enabling it to run smoothly on standard consumer computers with 8GB or 16GB of RAM.
 * **GGUF File Format**: A file format optimized for fast loading and running on consumer hardware using CPU, GPU, or split CPU/GPU configurations.
+
+### Llama.cpp & Local Server Launch
+Llama.cpp is an open-source C/C++ execution engine designed to run quantized GGUF models locally with high performance.
+* **Setup Process**:
+  1. Download the executable zip folder from the official releases page of the **llama.cpp** GitHub repository. (Choose the CUDA GPU version if your system has an NVIDIA graphics card; otherwise, download the CPU version).
+  2. Unzip the folder and open the command prompt (`cmd`) in that directory.
+  3. Run the following command to download the model from Hugging Face and start the server:
+     ```cmd
+     .\llama-server.exe -hf raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF -ngl 25
+     ```
+     * `-hf`: Instructs llama.cpp to fetch the model directly from Hugging Face's registry.
+     * `-ngl 25`: Stands for "Number of GPU Layers". This offloads 25 layers of the network to the GPU (leaving the rest to be handled by the CPU), optimizing performance.
+  4. The server runs on `http://localhost:8080`, exposing an OpenAI-compatible API endpoint on port `8080/v1` and a web chat dashboard interface.
+  5. To change the model, just replace the model name "raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF" with any other model from hugging face, as the command is for -hf.
+
+---
