@@ -171,3 +171,16 @@ FastAPI is an **Asynchronous Server Gateway Interface (ASGI)** web framework. Tr
 Pydantic is a data validation and settings management library for Python. It enforces type hints at runtime, providing user-friendly errors when data is invalid. It automatically translates raw JSON strings from HTTP requests into validated Python objects, and handles the reverse serialization (converting objects back to JSON responses) on completion.
 
 ---
+
+## 5. Architectural Choices and Alternatives
+
+### Why FastAPI?
+FastAPI was chosen because of its native support for asynchronous programming, rapid development speed, automatic Swagger UI documentation generation, and integrated Pydantic support.
+
+#### Alternatives and Trade-offs
+
+| Web Framework | Language / Ecosystem | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **FastAPI** *(Chosen)* | Python (ASGI) | • Extremely high performance.<br>• Native support for `async`/`await`.<br>• Automatic API documentation. | • Requires understanding asynchronous concepts in Python. |
+| **Flask** | Python (WSGI) | • Minimal, lightweight, and highly stable.<br>• Huge library ecosystem. | • Synchronous by default (blocks thread during database I/O).<br>• Requires manual validation setups. |
+| **Django REST Framework** | Python (WSGI) | • "Batteries included" (built-in admin, ORM, security). | • Heavyweight for simple chat APIs.<br>• High learning curve. |
