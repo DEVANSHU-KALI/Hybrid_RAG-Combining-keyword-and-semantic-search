@@ -125,3 +125,18 @@ async def chat_endpoint(request: QueryRequest):
 ```
 
 ---
+
+### Input and Output Specifications
+* **Input**: An HTTP POST request directed to `http://localhost:8000/chat`.
+  - Content-Type: `application/json`
+  - Body: `{"prompt": "What is overfitting?"}`
+* **Output**: An HTTP response containing a JSON object:
+  ```json
+  {
+    "answer": "Overfitting is...",
+    "citations": ["concepts.txt"],
+    "contexts": ["Chunk 1 text..."]
+  }
+  ```
+
+---
