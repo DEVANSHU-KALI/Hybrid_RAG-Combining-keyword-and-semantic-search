@@ -75,3 +75,21 @@ class QueryRequest(BaseModel):
   - *What does this do?* This defines the data schema of requests our API accepts. If a user submits a request with a missing `prompt` field or an incorrect format (e.g., passing a list instead of a string), FastAPI will automatically reject the request with a `422 Unprocessable Entity` error code, protecting our internal functions from bad inputs.
 
 ---
+
+### Endpoint Mapping
+```python
+# Chat Endpoint
+@app.post("/chat")
+async def chat_endpoint(request: QueryRequest):
+
+    result = await generate_answer(request.prompt)
+
+    return result
+```
+- **Lines 42–47**:
+  - We define an asynchronous routing handler `chat_endpoint` using the `@app.post("/chat")` decorator. This binds HTTP POST requests sent to `/chat` to this function.
+  - We declare `request: QueryRequest` as a parameter. FastAPI parses the incoming JSON body, validates it against our schema, and instantiates the `request` variable.
+  - We extract the prompt value using `request.prompt` and call the asynchronous RAG pipeline using `await generate_answer()`.
+  - The pipeline returns the result dictionary, which FastAPI automatically converts (serializes) into a standard JSON response string and sends back to the client.
+
+---
