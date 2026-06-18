@@ -93,3 +93,35 @@ async def chat_endpoint(request: QueryRequest):
   - The pipeline returns the result dictionary, which FastAPI automatically converts (serializes) into a standard JSON response string and sends back to the client.
 
 ---
+
+## 3. Execution Trace Flow & Step-by-Step Walkthrough
+
+### Flow Diagram
+```
+             HTTP POST Client Request: {"prompt": "text"}
+                                │
+                                ▼
+                       FastAPI Route Match
+                            (/chat)
+                                │
+                                ▼
+                      Pydantic Schema Check
+                         (QueryRequest)
+                 ├── Invalid ──► HTTP 422 Error
+                 └── Valid   ──► Instantiate request
+                                │
+                                ▼
+                       Execute chat_endpoint
+                                │
+                                ▼
+                     await generate_answer()
+                      (Triggers RAG Pipeline)
+                                │
+                                ▼
+                    Serialize Result Dict to JSON
+                                │
+                                ▼
+               HTTP 200 OK Response back to Client
+```
+
+---
