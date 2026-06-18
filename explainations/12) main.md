@@ -32,3 +32,33 @@ app = FastAPI(title="Hybrid RAG API")
   - We instantiate the web app as `app`, naming it `"Hybrid RAG API"`.
 
 ---
+
+### Startup Lifecycle Check
+```python
+# Qdrant Startup Check
+@app.on_event("startup")
+async def startup_check():
+
+    try:
+        client = QdrantClient(
+            host="localhost",
+            port=6333
+        )
+
+        client.get_collections()
+
+        print("\n✅ Qdrant connection successful.\n")
+
+    except Exception:
+        print("\n❌ Qdrant is not running.")
+        print("Start your Qdrant Docker container first.\n")
+```
+- **Lines 14–31**:
+  - We use the `@app.on_event("startup")` event hook decorator. This tells FastAPI to execute the nested function `startup_check()` during the server startup sequence before accepting any web requests.
+  - **The Verification Try-Except Block**:
+    - We initialize a synchronous `QdrantClient` pointing to `localhost:6333`.
+    - We call `client.get_collections()` to send a test request to Qdrant.
+    - If Qdrant is running, the call succeeds and we print a success message to the console.
+    - If the server is offline or unreachable, an exception is caught. We print a warning to alert the developer to check their running Docker containers.
+
+---
