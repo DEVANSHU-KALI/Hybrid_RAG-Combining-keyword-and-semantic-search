@@ -161,3 +161,13 @@ Assume a client submits a POST request to `/chat` with a payload of `{"prompt": 
    - Sends the response back to the client with an `HTTP 200 OK` status code.
 
 ---
+
+## 4. Deep Technical Concepts
+
+### Web Framework and ASGI
+FastAPI is an **Asynchronous Server Gateway Interface (ASGI)** web framework. Traditional WSGI (Web Server Gateway Interface) frameworks (like Flask or Django) process requests synchronously in a block-per-thread model. FastAPI uses ASGI, enabling it to process thousands of concurrent connections on a single thread using non-blocking asynchronous event loops.
+
+### Pydantic Schema Validation
+Pydantic is a data validation and settings management library for Python. It enforces type hints at runtime, providing user-friendly errors when data is invalid. It automatically translates raw JSON strings from HTTP requests into validated Python objects, and handles the reverse serialization (converting objects back to JSON responses) on completion.
+
+---
