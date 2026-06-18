@@ -140,3 +140,24 @@ async def chat_endpoint(request: QueryRequest):
   ```
 
 ---
+
+### Step-by-Step Variable Trace Walkthrough
+Assume a client submits a POST request to `/chat` with a payload of `{"prompt": "What is overfitting?"}`:
+
+1. **Request Interception**: FastAPI intercept the HTTP packet.
+2. **Schema Validation**: 
+   - Pydantic parses the payload `{"prompt": "What is overfitting?"}`.
+   - It verifies that the key `"prompt"` is present and holds a string value.
+   - Instantiates `request = QueryRequest(prompt="What is overfitting?")`.
+3. **Handler Execution**: The runtime calls `chat_endpoint(request)`.
+4. **Variable Extraction**:
+   - `request.prompt` evaluates to `"What is overfitting?"`.
+5. **Async Pipeline Call**:
+   - Calls `await generate_answer("What is overfitting?")`.
+   - The execution yields control to the async event loop. Once the RAG pipeline finishes, `result` is populated with the returned dictionary:
+     `result = {"answer": "Overfitting is...", "citations": [...], "contexts": [...]}`.
+6. **Serialization and Return**:
+   - FastAPI converts the Python dictionary `result` into a JSON-formatted text string.
+   - Sends the response back to the client with an `HTTP 200 OK` status code.
+
+---
