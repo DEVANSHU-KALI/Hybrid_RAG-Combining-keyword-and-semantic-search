@@ -62,3 +62,16 @@ async def startup_check():
     - If the server is offline or unreachable, an exception is caught. We print a warning to alert the developer to check their running Docker containers.
 
 ---
+
+### Request Validation Schema
+```python
+# Request Validation
+class QueryRequest(BaseModel):
+    prompt: str
+```
+- **Lines 37–38**:
+  - We declare a class `QueryRequest` inheriting from Pydantic's `BaseModel`.
+  - We define a single required attribute `prompt` of type `str`.
+  - *What does this do?* This defines the data schema of requests our API accepts. If a user submits a request with a missing `prompt` field or an incorrect format (e.g., passing a list instead of a string), FastAPI will automatically reject the request with a `422 Unprocessable Entity` error code, protecting our internal functions from bad inputs.
+
+---
