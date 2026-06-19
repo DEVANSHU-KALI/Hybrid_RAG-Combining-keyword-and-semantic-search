@@ -66,3 +66,25 @@ if query:
   - `timeout=60.0`: We set a 60-second limit. If the local language model is slow and doesn't respond within 60 seconds, the client aborts the request rather than hanging indefinitely.
 
 ---
+
+### Response Rendering
+```python
+            # Successful Response
+            if response.status_code == 200:
+                data = response.json()
+
+                # Display Answer
+                st.subheader("Answer")
+                st.write(data["answer"])
+                st.subheader("Sources")
+
+                for source in data["citations"]:
+                    st.write(f"- {source}")
+```
+- **Lines 34–43**:
+  - We verify if the server returned successfully: `if response.status_code == 200`.
+  - We parse the JSON response body using `response.json()`.
+  - We render the heading `"Answer"` and print the generated text response using `st.write(data["answer"])`.
+  - We print the heading `"Sources"` and loop through `data["citations"]` to list the referenced filenames as bullet points on the screen.
+
+---
