@@ -179,3 +179,26 @@ Assume the user types `"What is bias?"` in the input widget and presses enter:
    - Draws subheader `"Sources"` and a bullet point `"- concepts.txt"`.
 
 ---
+
+## 4. Deep Technical Concepts
+
+### Streamlit's Execution Model
+Unlike traditional web frameworks (like React or Django) that update specific components using event listeners or state hooks, **Streamlit** uses a simple top-to-bottom rerun model. Every time a user interacts with a widget (typing in a box, clicking a button, or sliding a bar), Streamlit reruns the entire Python script from Line 1 to the end. The framework handles caching and rendering optimizations behind the scenes so the interface updates seamlessly.
+
+### Client-Server Decoupling
+This project utilizes a decoupled **Client-Server Architecture**. The frontend script (`app.py`) is completely independent of the RAG retrieval logic. It only handles rendering the layout and making HTTP requests. The backend (`main.py`) handles processing the data. This allows developers to modify backend models, database indexing configurations, or reranking models without changing a single line of code in the user interface.
+
+---
+
+## 5. Architectural Choices and Alternatives
+
+### Why Streamlit?
+Streamlit is an excellent choice for AI and data science applications. It enables developers to construct fully interactive web dashboards in pure Python without writing HTML, CSS, JavaScript, or build scripts.
+
+#### Alternatives and Trade-offs
+
+| UI Framework | Language / Stack | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **Streamlit** *(Chosen)* | Python | • 100% Python (no JS required).<br>• Extremely rapid prototyping. | • Limited layout flexibility.<br>• Every user click reruns the entire script, which can be inefficient for heavy apps. |
+| **Vanilla HTML + JavaScript** | JS / CSS / HTML | • Works natively in all browsers with zero setup.<br>• Total control over styles and scripts. | • Requires writing frontend boilerplate (DOM parsing, fetch promises, manual layout building). |
+| **React / Next.js** | TypeScript | • Industry standard for production apps.<br>• Highly interactive, smooth client rendering. | • High complexity.<br>• Requires setting up Node.js pipelines. |
