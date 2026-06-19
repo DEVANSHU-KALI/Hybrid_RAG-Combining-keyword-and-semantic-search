@@ -152,3 +152,30 @@ if query:
 ```
 
 ---
+
+### Input and Output Specifications
+* **Input**: User clicks/interactions in the browser window.
+* **Output**: Renders interactive web widgets (buttons, boxes, loaders, text layouts) in the browser window.
+
+---
+
+### Step-by-Step Variable Trace Walkthrough
+Assume the user types `"What is bias?"` in the input widget and presses enter:
+
+1. **State Trigger**: Streamlit detects a state change. It automatically reruns `app.py` from top to bottom.
+2. **Title Creation**: The browser draws the heading `"Hybrid RAG Chatbot"`.
+3. **Input Extraction**: `st.text_input` captures the input and assigns `query = "What is bias?"`.
+4. **Conditional Check**: `if "What is bias?"` evaluates to `True`.
+5. **Spinner Start**: A loading spinner appears at the bottom of the page.
+6. **Payload Construction**: Sets `payload = {"prompt": "What is bias?"}`.
+7. **HTTP POST Request**: Sends a request to `http://localhost:8000/chat`.
+8. **Waiting & Response**:
+   - The FastAPI backend finishes running.
+   - The server replies with a payload of status `200` and body:
+     `{"answer": "Bias is...", "citations": ["concepts.txt"], ...}`.
+9. **Rendering**:
+   - The spinner vanishes.
+   - Draws subheader `"Answer"` and text `"Bias is..."`.
+   - Draws subheader `"Sources"` and a bullet point `"- concepts.txt"`.
+
+---
