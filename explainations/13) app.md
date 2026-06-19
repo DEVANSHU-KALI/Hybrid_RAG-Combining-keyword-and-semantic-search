@@ -88,3 +88,25 @@ if query:
   - We print the heading `"Sources"` and loop through `data["citations"]` to list the referenced filenames as bullet points on the screen.
 
 ---
+
+### Error Handling
+```python
+            # API Error
+            else:
+                st.error(
+                    f"Backend Error: "
+                    f"{response.status_code}"
+                )
+
+        # Connection Error
+        except Exception as error:
+            st.error(
+                f"Connection Failed: "
+                f"{error}"
+            )
+```
+- **Lines 46–57**:
+  - The `else` statement handles cases where the backend server runs but encounters an internal error (e.g., returns `HTTP 500`). We display a red error notification card showing the status code.
+  - The `except Exception` block intercepts connection errors (such as if the FastAPI server is completely offline). We capture the error details and display a red error message to guide the user.
+
+---
