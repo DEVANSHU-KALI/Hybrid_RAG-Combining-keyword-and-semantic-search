@@ -25,3 +25,23 @@ API_URL = "http://localhost:8000/chat"
   - We set our backend query target address to `"http://localhost:8000/chat"` (where our FastAPI server receives requests).
 
 ---
+
+### User Input and Spinner Integration
+```python
+# User Input
+query = st.text_input("Ask a question")
+
+# Query Processing
+if query:
+
+    # Loading Spinner
+    with st.spinner(
+        "Retrieving and generating answer..."
+    ):
+```
+- **Lines 11–19**:
+  - We render a text entry box labeled `"Ask a question"` using `st.text_input()`. The user's input string is saved in `query`.
+  - `if query:` checks if the string is not empty. When a user writes a question and presses enter, this triggers the conditional block.
+  - We wrap our execution block inside `with st.spinner(...)`. This displays an animated loading indicator to show the user that their request is being processed.
+
+---
