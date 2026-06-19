@@ -110,3 +110,45 @@ if query:
   - The `except Exception` block intercepts connection errors (such as if the FastAPI server is completely offline). We capture the error details and display a red error message to guide the user.
 
 ---
+
+## 3. Execution Trace Flow & Step-by-Step Walkthrough
+
+### Flow Diagram
+```
+                     User enters query & enters
+                                │
+                                ▼
+                   Streamlit Script Execution
+                     Starts (Top to Bottom)
+                                │
+                                ▼
+                       Check: Is query set?
+                 ├── No  ──► Render empty page
+                 └── Yes ──► Show Loading Spinner
+                                │
+                                ▼
+                       Assemble JSON Payload
+                                │
+                                ▼
+                       Submit HTTP POST to
+                      http://localhost:8000/
+                                │
+                                ▼
+                       Wait for Server Reply
+                 ┌──────────────┴──────────────┐
+                 ▼                             ▼
+            HTTP 200 OK                   Other / Error
+                 │                             │
+                 ▼                             ▼
+          Parse JSON data               Show error banner
+                 │                      (st.error / Offline)
+                 ▼                             │
+          Render answer &                      │
+             citations                         │
+                 │                             │
+                 └──────────────┬──────────────┘
+                                ▼
+                      Hide Loading Spinner
+```
+
+---
