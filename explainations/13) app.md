@@ -45,3 +45,24 @@ if query:
   - We wrap our execution block inside `with st.spinner(...)`. This displays an animated loading indicator to show the user that their request is being processed.
 
 ---
+
+### API Request Submission
+```python
+        try:
+            # Request Payload
+            payload = {"prompt": query}
+
+            # Send Async Request
+            response = httpx.post(
+                API_URL,
+                json=payload,
+                timeout=60.0
+            )
+```
+- **Lines 21–31**:
+  - We start a **try-except** block to catch network and server faults.
+  - We package our prompt into a JSON payload dictionary: `{"prompt": query}`.
+  - We send an HTTP POST request using `httpx.post()`. We pass `json=payload` to serialize the dict to a JSON body.
+  - `timeout=60.0`: We set a 60-second limit. If the local language model is slow and doesn't respond within 60 seconds, the client aborts the request rather than hanging indefinitely.
+
+---
