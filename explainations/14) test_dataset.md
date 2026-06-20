@@ -87,3 +87,17 @@ Let's trace the lifecycle of this data during evaluation:
 In generative AI development, manual testing is insufficient. Developers curate an **Evaluation Dataset** containing representative questions. For each question, they define a **Ground Truth** (the reference correct answer). These gold-standard QA pairs allow automatic evaluators to score the chatbot's performance before and after code changes.
 
 ---
+
+## 5. Architectural Choices and Alternatives
+
+### Why Static Inline Python Lists?
+Using a static Python list is simple and fast. It requires zero filesystem parsing at runtime (no JSON or CSV parsing logic is written). The file acts as a module that Python scripts can import directly.
+
+#### Alternatives and Trade-offs
+
+| Storage Structure | Strategy | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **Static Python Variable** *(Chosen)* | Declared inline in a `.py` file. | • Instant importing.<br>• Simplest local structure. | • Mixes raw test data with code execution space.<br>• Not easily readable by non-python software. |
+| **JSON File** | `dataset.json` storing structured QA arrays. | • Language independent (can be read by Node.js or Python). | • Requires writing filesystem read and JSON parse code. |
+| **CSV / Excel Sheet** | Standard database sheets. | • Highly readable for business analysts and testers. | • Requires installing external libraries (like `pandas` or `openpyxl`). |
+| **Hugging Face Hub** | Hosted dataset repository. | • Version controlled and hosted on the cloud.<br>• Easily shared across teams. | • Requires internet connectivity and dependency libraries. |
