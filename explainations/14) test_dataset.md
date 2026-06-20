@@ -30,3 +30,31 @@ evaluation_dataset = [
     - `"ground_truth"`: A concise, correct definition of overfitting. When evaluating our system, we compare the LLM's generated response to this text block to check if the generated answer is mathematically correct and covers all necessary concepts.
 
 ---
+
+## 3. Execution Trace Flow & Step-by-Step Walkthrough
+
+### Flow Diagram
+```
+                     RAGAS Evaluation Launch
+                                │
+                                ▼
+                       Import test_dataset
+                                │
+                                ▼
+                        Loop Over Items:
+                     question & ground_truth
+                                │
+                                ▼
+                 Run query through RAG pipeline
+                 (generate_answer -> generated)
+                                │
+                                ▼
+                    Bundle Evaluation Record:
+                     {question, generated,
+                      ground_truth, contexts}
+                                │
+                                ▼
+                      RAGAS Metric Scoring
+```
+
+---
