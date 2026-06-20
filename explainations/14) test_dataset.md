@@ -80,3 +80,10 @@ Let's trace the lifecycle of this data during evaluation:
    - RAGAS loads `generated_answer` and the reference `ground_truth` (`"Overfitting occurs when..."`), comparing them using a judge LLM to evaluate faithfulness and correctness.
 
 ---
+
+## 4. Deep Technical Concepts
+
+### Evaluation Datasets (Gold Standards)
+In generative AI development, manual testing is insufficient. Developers curate an **Evaluation Dataset** containing representative questions. For each question, they define a **Ground Truth** (the reference correct answer). These gold-standard QA pairs allow automatic evaluators to score the chatbot's performance before and after code changes.
+
+---
