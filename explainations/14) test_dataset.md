@@ -58,3 +58,25 @@ evaluation_dataset = [
 ```
 
 ---
+
+### Input and Output Specifications
+* **Input**: None (static variable definition).
+* **Output**: `evaluation_dataset` (Type: `list[dict]`) - A list containing structured validation cases.
+
+---
+
+### Step-by-Step Variable Trace Walkthrough
+Let's trace the lifecycle of this data during evaluation:
+
+1. **Import Stage**: The evaluation runner execution loads the list:
+   `from evaluations.test_dataset import evaluation_dataset`.
+2. **Loop Iteration**:
+   - `item` is set to `{"question": "What is overfitting?", "ground_truth": "Overfitting occurs..."}`.
+3. **Pipeline query**: The system extracts the question:
+   - `question = item["question"]` -> `"What is overfitting?"`.
+   - Passes `"What is overfitting?"` to `generate_answer()`.
+4. **Answer Grounding Comparison**:
+   - The pipeline returns `generated_answer`.
+   - RAGAS loads `generated_answer` and the reference `ground_truth` (`"Overfitting occurs when..."`), comparing them using a judge LLM to evaluate faithfulness and correctness.
+
+---
