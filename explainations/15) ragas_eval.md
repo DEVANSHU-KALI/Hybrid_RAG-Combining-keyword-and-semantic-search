@@ -223,3 +223,34 @@ async def run_evaluation():
 ```
 
 ---
+
+### Input and Output Specifications
+* **Input**: 
+  * Static evaluation scenarios in `test_dataset.py` (containing 3 queries).
+  * Groq API key inside the `.env` file: `GROQ_API_KEY=your_key_here`.
+* **Output**: Writes the detailed metric evaluation report to `evaluation_results/ragas_results.xlsx`. Prints the scoring table to the terminal.
+
+---
+
+### Step-by-Step Variable Trace Walkthrough
+Let's trace a run of the evaluation script with our 3-question dataset:
+
+1. **Load Environment**: `load_dotenv()` checks for the `.env` file and loads `GROQ_API_KEY`.
+2. **Evaluator Init**: Instantiates `evaluator_llm` pointing to Groq's API endpoint with model `llama-3.3-70b-versatile`.
+3. **Execution Loop**:
+   - Loops through 3 items in `evaluation_dataset`:
+     - *Index 0*: `"What is overfitting?"`
+     - *Index 1*: `"How do Vector Embeddings and Cosine Similarity work together..."`
+     - *Index 2*: `"How can Dropout Regularization help reduce..."`
+   - For each query, `generate_answer()` fetches contexts from Qdrant, reranks them to a top 3 subset, and runs Qwen local generation to capture `answer` and `contexts`.
+4. **Dataset Conversion**: Constructs a dataset table with these columns.
+5. **RAGAS scoring (The Rate-Limited LLM-as-a-judge process)**:
+   - RAGAS initiates 12 metric evaluation calls concurrently.
+   - The `InMemoryRateLimiter` serializes the requests, allowing only 1 call every 5 seconds.
+   - While requests wait in the queue, their client timeouts are set to `180s`, preventing them from expiring.
+   - Groq evaluates the metrics:
+     - **Faithfulness check**: Analyzes if statements in the answer are supported by contexts. (For Q1, it returns a low score of `0.28` because the retriever missed the Cosine Similarity context chunk).
+     - **Context Recall check**: Verifies if the context contains all facts required to answer the question. (For Q1, it returns `0.6` because the Cosine Similarity definition is missing from the retrieved context).
+6. **Save Stage**: Converts results to a Pandas DataFrame, replaces all instances of `\n` in cells with spaces to prevent CSV/Excel row-splitting layout corruption, and writes the data to `evaluation_results/ragas_results.xlsx`.
+
+---
