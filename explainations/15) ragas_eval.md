@@ -180,3 +180,46 @@ async def run_evaluation():
   - Writes the DataFrame to an Excel spreadsheet (`ragas_results.xlsx`) using `to_excel(..., index=False)`.
 
 ---
+
+## 3. Execution Trace Flow & Step-by-Step Walkthrough
+
+### Flow Diagram
+```
+              Load Environment Variables (.env)
+                              │
+                              ▼
+                 Instantiate Groq API Client
+             (llama-3.3-70b-versatile via ChatOpenAI)
+                              │
+                              ▼
+                   Loop over validation items
+                  in evaluations.test_dataset
+                              │
+                              ▼
+                 Call generate_answer(query)
+               (RAG pipeline retrieves context
+                 and generates answer locally)
+                              │
+                              ▼
+                Aggregate: questions[], answers[],
+                     contexts[], ground_truths[]
+                              │
+                              ▼
+                Convert to Hugging Face Dataset
+                              │
+                              ▼
+                 Execute RAGAS evaluate() API
+              (Rate-limited: 1 call / 5 seconds;
+                queued requests timeout = 180s)
+                              │
+                              ▼
+                Convert scores to Pandas DataFrame
+                              │
+                              ▼
+                 Sanitize newline characters (\n)
+                              │
+                              ▼
+                Export to Excel spreadsheet file
+```
+
+---
