@@ -147,3 +147,36 @@ async def run_evaluation():
   - We invoke the `evaluate()` function, passing our dataset, the 4 quality metrics, our Groq-hosted LLM judge, and the Hugging Face embedding model.
 
 ---
+
+### Exporting and Saving Results
+```python
+    # Convert Results To DataFrame & Sanitize Formatting
+    df = evaluation_result.to_pandas()
+    
+    # Clean up any newlines in cells so they do not break Excel/CSV formatting
+    for col in df.columns:
+        df[col] = df[col].apply(lambda x: x.replace("\n", " ") if isinstance(x, str) else x)
+        df[col] = df[col].apply(lambda x: [item.replace("\n", " ") for item in x] if isinstance(x, list) else x)
+```
+- **Lines 125–130**:
+  - We convert the evaluation results object into a Pandas DataFrame using `to_pandas()`.
+  - **Formatting Sanitization**: We loop through all DataFrame cells and replace newline characters (`\n`) with spaces. This prevents raw line breaks from breaking spreadsheet layouts when viewed in Excel or CSV readers.
+
+```python
+    # Save Results Folder dynamically in script's directory
+    current_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in locals() else os.getcwd()
+    output_folder = os.path.join(current_dir, "evaluation_results")
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Excel File Path
+    excel_path = os.path.join(output_folder, "ragas_results.xlsx")
+
+    # Save Results To Excel
+    df.to_excel(excel_path, index=False)
+```
+- **Lines 150–158**:
+  - We check if `__file__` is available in `locals()`. Since `__file__` is a global module variable, this check returns `False` inside the function, falling back to `os.getcwd()` (our project root directory).
+  - Creates the directory `evaluation_results/` in the root folder using `os.makedirs()`.
+  - Writes the DataFrame to an Excel spreadsheet (`ragas_results.xlsx`) using `to_excel(..., index=False)`.
+
+---
