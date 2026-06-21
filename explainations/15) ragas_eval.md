@@ -79,3 +79,42 @@ evaluator_llm = ChatOpenAI(
   - **`timeout=180`**: Sets a 3-minute request timeout limit. Since RAGAS runs multiple metrics concurrently, requests at the back of the queue must wait for their turn. Increasing the client timeout prevents requests from expiring while waiting in the rate-limiter queue.
 
 ---
+
+### Processing the Test Dataset
+```python
+async def run_evaluation():
+    questions = []
+    answers = []
+    contexts = []
+    ground_truths = []
+
+    # Loop Through Evaluation Data
+    for item in evaluation_dataset:
+        question = item["question"]
+        ground_truth = item["ground_truth"]
+
+        print("\n===================")
+        print(f"QUESTION: {question}")
+        print("===================\n")
+
+        # Run Full RAG Pipeline
+        result = await generate_answer(question)
+
+        # Extract Generated Answer and Retrieved Contexts
+        generated_answer = result["answer"]
+        retrieved_contexts = result["contexts"]
+
+        # Store Results
+        questions.append(question)
+        answers.append(generated_answer)
+        contexts.append(retrieved_contexts)
+        ground_truths.append(ground_truth)
+```
+- **Lines 60–96**:
+  - We initialize empty lists to accumulate evaluation variables.
+  - We loop through each QA item inside `evaluation_dataset` (imported from `test_dataset.py`).
+  - We pass the question to our local RAG pipeline: `await generate_answer(question)`.
+  - We extract the generated answer string and the list of retrieved context chunk texts.
+  - We append these values, along with the test question and reference ground truth, to our lists.
+
+---
