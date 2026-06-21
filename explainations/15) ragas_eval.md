@@ -118,3 +118,32 @@ async def run_evaluation():
   - We append these values, along with the test question and reference ground truth, to our lists.
 
 ---
+
+### Executing the RAGAS Benchmarking Run
+```python
+    # Create HuggingFace Dataset
+    dataset = Dataset.from_dict({
+        "question": questions,
+        "answer": answers,
+        "contexts": contexts,
+        "ground_truth": ground_truths
+    })
+
+    # Run RAGAS Evaluation
+    evaluation_result = evaluate(
+        dataset=dataset,
+        metrics=[
+            faithfulness,
+            answer_relevancy,
+            context_precision,
+            context_recall
+        ],
+        llm=evaluator_llm,
+        embeddings=evaluator_embeddings
+    )
+```
+- **Lines 100–120**:
+  - RAGAS requires inputs to be structured in a Hugging Face `Dataset` table. We convert our lists into this format using `Dataset.from_dict()`.
+  - We invoke the `evaluate()` function, passing our dataset, the 4 quality metrics, our Groq-hosted LLM judge, and the Hugging Face embedding model.
+
+---
