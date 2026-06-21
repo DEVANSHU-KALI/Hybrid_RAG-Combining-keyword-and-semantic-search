@@ -254,3 +254,25 @@ Let's trace a run of the evaluation script with our 3-question dataset:
 6. **Save Stage**: Converts results to a Pandas DataFrame, replaces all instances of `\n` in cells with spaces to prevent CSV/Excel row-splitting layout corruption, and writes the data to `evaluation_results/ragas_results.xlsx`.
 
 ---
+
+## 4. Deep Technical Concepts
+
+### RAGAS Metrics (LLM-as-a-Judge Framework)
+RAGAS evaluates components of a RAG pipeline independently by instructing a powerful LLM to act as a judge. It measures:
+
+1. **Faithfulness** (Hallucination Checker): Measures if the generated answer is derived *only* from the retrieved context. 
+   - *Formula/Method*: The judge LLM breaks the generated answer into individual statements. It then verifies if each statement is explicitly supported by the retrieved contexts.
+2. **Answer Relevancy** (Response Quality): Evaluates if the generated answer directly addresses the user's question.
+   - *Method*: The judge LLM generates multiple hypothetical questions based on the chatbot's answer, and measures the vector similarity between those generated questions and the user's original query.
+3. **Context Precision** (Retrieval Order): Evaluates if the retrieved chunks that contain relevant information are ranked at the top of the search results.
+   - *Method*: The judge LLM evaluates each chunk and assigns a relevance label, penalizing the system if irrelevant chunks appear before relevant ones.
+4. **Context Recall** (Retrieval Completeness): Evaluates if all the information required to answer the question is present in the retrieved chunks.
+   - *Method*: The judge LLM compares the retrieved context chunks against the human-written `ground_truth` and identifies what percentage of facts in the ground truth are present in the context.
+
+### Rate Limiting and Client Timeout Alignments
+In concurrent programming, rate-limiting restricts the frequency of requests sent to a resource to prevent API keys from being blacklisted or encountering 429 quota exhaustion.
+* **The Queue Delay Effect**: When a rate limiter forces requests to run sequentially (e.g., 1 request every 5 seconds), the requests at the back of the queue experience a delay before they are transmitted.
+* **Client Expiry**: If the queue delay exceeds the HTTP client's connection timeout limit (which defaults to 60 seconds), the client throws a `TimeoutError` and aborts the request.
+* **The Alignment Solution**: By explicitly setting `timeout=180` on the `ChatOpenAI` client, we extend the connection window to 3 minutes, giving the queued requests enough time to wait for their rate-limiter slots.
+
+---
