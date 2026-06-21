@@ -276,3 +276,16 @@ In concurrent programming, rate-limiting restricts the frequency of requests sen
 * **The Alignment Solution**: By explicitly setting `timeout=180` on the `ChatOpenAI` client, we extend the connection window to 3 minutes, giving the queued requests enough time to wait for their rate-limiter slots.
 
 ---
+
+## 5. Architectural Choices and Alternatives
+
+### Why Groq API + Local Embeddings?
+This design uses local embeddings to compute similarity vector alignments for free, while routing the complex semantic reasoning tasks (checking logical implications) to a powerful large language model via Groq's high-speed API. Using Groq's `llama-3.3-70b-versatile` model provides fast evaluations under high-parameter model intelligence.
+
+#### Alternatives and Trade-offs
+
+| Evaluation Strategy | How it Works | Pros | Cons |
+| :--- | :--- | :--- | :--- |
+| **RAGAS via Groq** *(Chosen)* | Uses LLM-as-a-judge metrics via Groq API. | • Blazing fast API inference.<br>• Free tier model options available.<br>• 70B parameter model accuracy. | • Requires active internet connection.<br>• Free tier has strict token/request quotas, requiring client-side rate limiters. |
+| **RAGAS via OpenRouter** | Uses OpenRouter model aggregations. | • Access to a wide variety of open-source and commercial models. | • Higher network latency.<br>• Frequent rate-limiting on free tiers. |
+| **Manual Evaluation** | A human expert reads and rates every response. | • Extremely accurate.<br>• Accounts for language nuances. | • Extremely slow and scales poorly.<br>• Subjective and difficult to replicate. |
