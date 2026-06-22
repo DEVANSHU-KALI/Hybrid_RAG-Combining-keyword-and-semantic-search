@@ -59,3 +59,42 @@ Sentence S2 ──► [Embedding Model] ──► Vector V2 ──┘           
 ```
 
 ---
+
+## 4. Score Fusion: Concept, Evolution, and Architecture
+
+### What is Score Fusion?
+In a hybrid search system, dense semantic retrieval and sparse BM25 retrieval output independent lists of candidates, each with its own scoring metric. **Score Fusion** is the mathematical technique used to combine these disparate scores into a single, unified ranking score. 
+
+The strategy used to fuse these scores dictates how the search engine balances keyword matching vs. conceptual similarity.
+
+---
+
+### The Evolution of Score Fusion Techniques
+
+Each fusion technique in search engineering evolved to address the weaknesses of its predecessor:
+
+```
+    [ Simple Addition ] ─────────► [ Weighted Linear Fusion ] ─────────► [ Reciprocal Rank Fusion (RRF) ]
+   Sum normalized scores.         Introduces alpha/beta weights          Rank-based, score-independent.
+   Treats all systems as          to prioritize systems (requires        Extremely robust against
+   equally important.             hyperparameter tuning).                outliers and scaling biases.
+```
+
+#### 1. Simple Addition Fusion *(Basic)*
+* **How it works**: Raw scores are normalized to a $[0.0, 1.0]$ range, and then added together directly for duplicate document IDs:
+  $$\text{Final Score} = S_{\text{normalized\_dense}} + S_{\text{normalized\_sparse}}$$
+* **Limitation**: It treats both retrieval systems as equally important. It has no way of prioritizing one model over another. If one retrieval run has lower quality results, it introduces ranking noise that pushes irrelevant documents to the top.
+
+#### 2. Weighted Linear Fusion *(Parametric)*
+* **How it works**: Introduces weighting coefficients (hyperparameters) like $\alpha$ (alpha) and $\beta$ (beta) to scale the influence of each retriever:
+  $$\text{Final Score} = \alpha \cdot S_{\text{normalized\_dense}} + \beta \cdot S_{\text{normalized\_sparse}}$$
+  *(Usually constrained where $\alpha + \beta = 1.0$, simplifying to: $\alpha \cdot S_{\text{dense}} + (1 - \alpha) \cdot S_{\text{sparse}}$)*
+* **Limitation**: Finding the optimal values for $\alpha$ and $\beta$ requires extensive offline testing, grid searches, and domain-specific validation datasets. A weight balance that works well for short keyword queries might perform poorly for long, conversational questions.
+
+#### 3. Reciprocal Rank Fusion (RRF) *(Rank-Based)*
+* **How it works**: Ignores raw scores entirely. It merges document candidates based on their rank positions (1st, 2nd, 3rd, etc.) in the individual lists using a decay formula:
+  $$RRF(d \in D) = \sum_{m \in M} \frac{1}{k + r_m(d)}$$
+  *(where $r_m(d)$ is the rank of document $d$ in system $m$, and $k$ is a constant, typically $60$, that prevents low ranks from dominating)*
+* **Advantage**: It is highly robust to outliers because it is score-independent. It does not require score normalization or complex parameter tuning.
+
+---
