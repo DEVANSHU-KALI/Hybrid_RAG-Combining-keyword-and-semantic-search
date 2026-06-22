@@ -199,3 +199,23 @@ While **RAGAS** provides standard mathematical formulations for RAG components, 
 4. **Vast SDK Backends**: DeepEval supports a broader range of local and cloud LLM APIs natively, providing comprehensive dashboards for tracking historical experiment runs.
 
 ---
+
+## 8. LLM Application Observability and Tracing (LangSmith)
+
+### Definition
+In traditional software, execution paths are deterministic and tracked via call logs. In LLM applications, execution involves multiple nested API requests, complex prompts, dynamic database searches, and non-deterministic text generation. **Observability** is the practice of tracking and monitoring these nested steps. **LangSmith** is a developer platform designed to debug, test, and monitor LLM pipelines.
+
+### How Tracing Works
+In this project, the RAG execution function in `rag_pipeline.py` is marked with the `@traceable` decorator:
+```python
+@traceable
+async def generate_answer(query: str):
+    ...
+```
+This decorator hooks into the Python runtime. When `generate_answer()` is called, LangSmith automatically logs:
+* The input query string.
+* The nested execution chain (recording exactly when `hybrid_search()` starts, when Qdrant is queried, when the Cross-Encoder starts, and when llama.cpp is invoked).
+* The latencies of each individual step, allowing developers to locate performance bottlenecks.
+* Token count consumption and prompt text payloads sent to llama.cpp, enabling audit trails and visual debugging of the execution history on the LangSmith dashboard.
+
+---
