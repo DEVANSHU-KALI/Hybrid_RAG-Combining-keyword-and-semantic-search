@@ -131,3 +131,71 @@ RAG architectures balance search speed and scoring accuracy using a multi-stage 
 ```
 
 ---
+
+## 6. Quantization and GGUF Local Inference
+
+### Quantization
+**Quantization** is a model compression technique that converts weight values from high-precision floating-point formats (e.g., 16-bit float, `FP16`) to lower precision representations (e.g., 4-bit integer, `Q4`). 
+* Quantizing a model reduces its RAM footprint and storage size by ~70%, enabling large language models (like the 7-billion parameter Qwen 2.5) to run locally on consumer computers.
+
+### GGUF Format & Llama.cpp
+* **GGUF** is a binary file format designed for fast model loading and efficient split execution across GPU and CPU.
+* **Llama.cpp** is a C++ inference engine that compiles GGUF models locally. It uses split offloading (`-ngl` parameter) to load a subset of layers into GPU VRAM while managing the remaining layers in system CPU memory.
+
+---
+
+## 7. RAG Evaluation Frameworks: RAGAS vs. DeepEval
+
+Evaluating RAG performance utilizes an **LLM-as-a-Judge** framework to score four key metrics:
+
+```
+                  ┌──────────────────────┐
+                  │    User Question     │
+                  └──────────┬───────────┘
+            Answer Relevancy │ Context Precision
+     ┌───────────────────────┼───────────────────────┐
+     ▼                       ▼                       ▼
+┌──────────┐ Context   ┌──────────┐ Faithfulness ┌──────────┐
+│ Generated│◄──────────│Retrieved │◄────────────►│  Ground  │
+│  Answer  │  Recall   │ Context  │              │  Truth   │
+└──────────┘           └──────────┘              └──────────┘
+```
+
+### The 4 Core RAGAS Metrics
+1. **Faithfulness** (Hallucination checker): Measures if the generated answer is derived *only* from the retrieved context.
+   $$\text{Faithfulness Score} = \frac{\text{Number of statements in answer supported by context}}{\text{Total number of statements in generated answer}}$$
+2. **Answer Relevancy** (Response quality): Evaluates if the generated answer directly addresses the query. Calculated by prompting a judge LLM to formulate hypothetical questions from the answer and measuring their vector similarity to the original query.
+3. **Context Precision** (Retrieval order accuracy): Checks if the retrieved chunks containing relevant information are ranked at the top of the search results.
+4. **Context Recall** (Retrieval completeness): Evaluates if all the information required to answer the question is present in the retrieved chunks by comparing the chunks to the reference ground truth.
+
+---
+
+### DeepEval: Extending RAG Evaluation
+
+While **RAGAS** provides standard mathematical formulations for RAG components, **DeepEval** is an open-source enterprise-grade LLM evaluation framework designed for regression testing and continuous integration (CI/CD). It extends RAGAS capabilities in several key ways:
+
+```
+                   ┌──────────────────────────────────────┐
+                   │               DeepEval               │
+                   └──────────────────┬───────────────────┘
+         ┌────────────────────────────┼────────────────────────────┐
+         ▼                            ▼                            ▼
+  Unit Testing & CI/CD          G-Eval Framework              Comprehensive
+  Integrates with Pytest to     Enables custom evaluator      Guardrails
+  run evaluations as test       criteria based on natural     Checks for toxicity,
+  assertions.                   language guidelines.          bias, and compliance.
+```
+
+1. **Unit Testing Integration (Pytest support)**: DeepEval allows developers to write evaluations as Python unit tests using Pytest. A test fails if a score drops below a set threshold, enabling automated regression checks in production deployment pipelines:
+   ```python
+   # Example DeepEval assertion
+   assert faithfulness_metric.score >= 0.8, "Answer contains hallucinations!"
+   ```
+2. **G-Eval (Custom Evaluators)**: DeepEval implements **G-Eval**, a framework that enables developers to define custom evaluation criteria using simple natural language instructions. The framework automatically converts these guidelines into scoring criteria executed by the LLM judge.
+3. **Broader Guardrail Metrics**: Beyond standard retrieval metrics, DeepEval includes built-in guardrail metrics such as:
+   - **Toxicity**: Evaluates if the LLM response contains offensive or harmful language.
+   - **Bias**: Identifies gender, racial, or political bias in generations.
+   - **Conversational Alignment**: Evaluates multi-turn conversation memory and consistency.
+4. **Vast SDK Backends**: DeepEval supports a broader range of local and cloud LLM APIs natively, providing comprehensive dashboards for tracking historical experiment runs.
+
+---
