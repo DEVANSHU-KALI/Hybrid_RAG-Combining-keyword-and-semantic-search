@@ -41,3 +41,21 @@ Information retrieval in modern RAG systems uses two main paradigms:
 * **Used in**: `bm25_retriever.py`.
 
 ---
+
+## 3. Semantic Chunking
+
+### Definition
+**Semantic Chunking** is a text splitting technique that groups text based on thematic transitions rather than arbitrary character or token counts. It processes a document sentence-by-sentence, calculates the semantic distance between consecutive sentences, and inserts a breakpoint (starts a new chunk) when the semantic distance exceeds a dynamically calculated percentile threshold.
+
+### Breakpoint Evaluation Flow
+```
+Sentence S1 ──► [Embedding Model] ──► Vector V1 ──┐
+                                                 ├──► Cosine Distance ──┐
+Sentence S2 ──► [Embedding Model] ──► Vector V2 ──┘                      │
+                                                                         ▼
+                                                          Does Distance > 75th Percentile?
+                                                          ├── Yes ──► Split (Start New Chunk)
+                                                          └── No  ──► Merge sentences
+```
+
+---
