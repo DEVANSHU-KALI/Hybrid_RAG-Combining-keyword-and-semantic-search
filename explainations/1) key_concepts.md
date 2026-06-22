@@ -113,3 +113,21 @@ The **Cross-Encoder Reranker** acts as a high-fidelity filter. It corrects any r
 This design pattern gives us the simplicity and speed of basic addition fusion during database retrieval, while guaranteeing high-precision contexts via reranking.
 
 ---
+
+## 5. Multi-Stage Retrieval & Cross-Encoder Reranking
+
+RAG architectures balance search speed and scoring accuracy using a multi-stage approach:
+
+### A. Stage 1: Retrieval (Bi-Encoder)
+* Uses a **Bi-Encoder** configuration where documents and queries are encoded independently. 
+* This allows documents to be indexed in a vector database beforehand. Searches are fast but lack direct interaction between query and document tokens.
+
+### B. Stage 2: Reranking (Cross-Encoder)
+* Uses a **Cross-Encoder** configuration that processes the query and document *together* through self-attention layers.
+* Self-attention evaluates token-to-token interactions directly (e.g., how the word "it" in the document relates to "overfitting" in the query). This is highly accurate but computationally heavy, which is why it is used as a second-stage filter on only a small subset of candidate chunks (e.g., re-scoring top 5 down to top 3).
+
+```
+[ Database (1000s of chunks) ] ──► (Bi-Encoder Search) ──► Top 5 Chunks ──► (Cross-Encoder Rerank) ──► Top 3 Chunks to LLM
+```
+
+---
