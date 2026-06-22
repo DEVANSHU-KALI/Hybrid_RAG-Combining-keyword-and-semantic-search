@@ -98,3 +98,18 @@ Each fusion technique in search engineering evolved to address the weaknesses of
 * **Advantage**: It is highly robust to outliers because it is score-independent. It does not require score normalization or complex parameter tuning.
 
 ---
+
+### Compensating for Basic Fusion: The Cross-Encoder Safeguard
+In this project, we implemented **Simple Addition Fusion** (the basic, non-parametric method). In a standalone retrieval system, this could risk delivering irrelevant context to the LLM due to score-scaling bias and ranking noise. 
+
+However, we built a highly resilient system by implementing a **Multi-Stage Retrieval Architecture**:
+
+1. **Stage 1 (High Recall / Low Precision)**: The hybrid search retrieves a candidate list (top 5). We use basic Min-Max normalization and Simple Addition fusion here because it is computationally cheap and simple to execute.
+2. **Stage 2 (High Precision Safeguard)**: The candidate list is passed to a **Cross-Encoder Reranker** (`ms-marco-MiniLM-L-6-v2`). The Cross-Encoder performs token-level attention comparison, re-scoring each chunk's direct relevance to the query.
+
+#### Why this is a powerful pattern:
+The **Cross-Encoder Reranker** acts as a high-fidelity filter. It corrects any ranking errors, noise, or bias introduced during the simple addition fusion stage. Even if the basic fusion method places an irrelevant chunk at rank 1, the Cross-Encoder will identify the lack of direct query-document alignment, re-score it negatively, and push the truly relevant context to the top before the prompt is sent to the LLM. 
+
+This design pattern gives us the simplicity and speed of basic addition fusion during database retrieval, while guaranteeing high-precision contexts via reranking.
+
+---
