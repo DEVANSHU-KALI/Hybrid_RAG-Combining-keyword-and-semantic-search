@@ -138,3 +138,18 @@ The user types the question `"What is overfitting?"` in the browser interface an
 The frontend packages the query and submits it as a POST request using the `httpx` client:
 * Variable: `payload` (Type: `dict`) = `{"prompt": "What is overfitting?"}`
 * *[Execution Context]*: The client encodes this dictionary into a JSON string and transmits it over HTTP to `http://localhost:8000/chat` using **[app.py](file:///d:/projects/hybrid_rag%20-%20Copy/frontend/app.py)**.
+
+#### Step 3: API Endpoint Reception
+The FastAPI server running on port 8000 receives the request at the `/chat` route:
+* Variable: `request` (Type: `QueryRequest` model instance)
+* *[Execution Context]*: Evaluated inside **[main.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/main.py)**. The server routes the request through its middleware pipeline.
+
+#### Step 4: Schema Validation
+Pydantic parses the payload. If the body contains `"prompt"`, it validates the type and maps it:
+* Variable: `request.prompt` (Type: `str`) = `"What is overfitting?"`
+* *[Execution Context]*: Enforced by the `QueryRequest` validation class in **[main.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/main.py)**.
+
+#### Step 5: Orchestration Bootstrapping
+The endpoint handler triggers the core RAG orchestration pipeline function:
+* Function: `generate_answer(query="What is overfitting?")`
+* *[Execution Context]*: Dispatched inside **[main.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/main.py)** and executed inside **[rag_pipeline.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/rag_pipeline.py)**, which uses the `@traceable` observer decorator to log latency and tokens.
