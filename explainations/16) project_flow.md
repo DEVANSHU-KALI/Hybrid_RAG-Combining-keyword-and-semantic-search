@@ -153,3 +153,14 @@ Pydantic parses the payload. If the body contains `"prompt"`, it validates the t
 The endpoint handler triggers the core RAG orchestration pipeline function:
 * Function: `generate_answer(query="What is overfitting?")`
 * *[Execution Context]*: Dispatched inside **[main.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/main.py)** and executed inside **[rag_pipeline.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/rag_pipeline.py)**, which uses the `@traceable` observer decorator to log latency and tokens.
+
+#### Step 6: Query Embedding
+To prepare for semantic vector similarity search, the query text is mapped to vector space:
+* Variable: `query_vector` (Type: `list[float]`, length = 384) = `[0.0812, -0.0411, ..., 0.0253]`
+* *[Execution Context]*: The query is embedded inside the function `retrieve_chunks()` located in **[semantic_retriever.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/semantic_retriever.py)**, using the model initialized in **[embedding_model.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/embedding_model.py)**.
+
+#### Step 7: Dense Retrieval Search
+The client submits the vector to the database to perform a nearest-neighbor query:
+* Variable: `results` (Type: Qdrant query response points object)
+* *[Execution Context]*: Queried inside **[semantic_retriever.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/semantic_retriever.py)**. The Qdrant engine performs cosine similarity searches on the `"rag_docs"` collection and returns the top 10 matches:
+  * Variable: `semantic_results` (Type: `list[dict]`) = `[{"chunk_id": 1, "score": 0.95, ...}, {"chunk_id": 2, "score": 0.82, ...}, ...]`
