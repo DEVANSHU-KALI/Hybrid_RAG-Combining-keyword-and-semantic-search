@@ -176,3 +176,19 @@ The raw score lists are normalized and fused to balance semantic and lexical sco
 * Variable: `combined_results` (Type: `dict` mapping chunk IDs to merged scores)
 * *[Execution Context]*: Managed by the `hybrid_search()` function inside **[hybrid_retriever.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/hybrid_retriever.py)**. It runs `normalize_scores()`, checks for division-by-zero, maps results into a dictionary, merges duplicate chunk IDs (e.g., combining the semantic and BM25 scores for `chunk_id=1` to form a final score of `1.0 + 1.0 = 2.0`), sorts the combined list in descending order, and returns the top 5 candidates:
   * Variable: `retrieved_chunks` (Type: `list[dict]`) = `[{"chunk_id": 1, "final_score": 2.0, ...}, ...]`
+
+#### Step 10: Candidate Reranking
+The 5 hybrid candidates are re-scored to assess exact query-document context interaction:
+* Variable: `scores` (Type: `numpy.ndarray` of logits) = `[3.85, -2.10, ...]`
+* *[Execution Context]*: Orchestrated by `rerank_results()` in **[reranker.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/reranker.py)**. It constructs string pairs: `[["What is overfitting?", "Chunk text..."]]`, feeds them into the `ms-marco-MiniLM-L-6-v2` Cross-Encoder model, attaches the floats to the chunks, sorts them, and returns the top 3:
+  * Variable: `reranked_chunks` (Type: `list[dict]`) = `[{"chunk_id": 1, "reranker_score": 3.85, ...}, ...]`
+
+#### Step 11: Prompt Synthesis & Local LLM Call
+The context texts are consolidated, citations are compiled, and the prompt is sent to the LLM:
+* Variables:
+  * `context` (Type: `str`) = `"Overfitting occurs when... \n\n Regularization helps..."`
+  * `citations` (Type: `list[str]`) = `["concepts.txt"]` (after applying `set()` and `list()`).
+  * `prompt` (Type: `str`) = `"You are a helpful assistant... Context: Overfitting occurs... Question: What is overfitting?"`
+  * `response` (Type: OpenAI completion response object)
+* *[Execution Context]*: Formatted inside **[rag_pipeline.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/rag_pipeline.py)**. The script sends the prompt asynchronously to the local model server (**[llama-server.exe](file:///d:/projects/hybrid_rag%20-%20Copy/backend/rag_pipeline.py#L9)**) running on port 8080. The quantized `Qwen 2.5 7B Q4` model performs local inference and generates the reply text:
+  * Variable: `answer` (Type: `str`) = `"Overfitting is when a machine learning model memorizes training data..."`
