@@ -192,3 +192,8 @@ The context texts are consolidated, citations are compiled, and the prompt is se
   * `response` (Type: OpenAI completion response object)
 * *[Execution Context]*: Formatted inside **[rag_pipeline.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/rag_pipeline.py)**. The script sends the prompt asynchronously to the local model server (**[llama-server.exe](file:///d:/projects/hybrid_rag%20-%20Copy/backend/rag_pipeline.py#L9)**) running on port 8080. The quantized `Qwen 2.5 7B Q4` model performs local inference and generates the reply text:
   * Variable: `answer` (Type: `str`) = `"Overfitting is when a machine learning model memorizes training data..."`
+
+#### Step 12: Deserialization & UI Rendering
+The API returns the payload to the frontend, which displays the response:
+* Variable: `data` (Type: `dict`) = `{"answer": "Overfitting is...", "citations": ["concepts.txt"], ...}`
+* *[Execution Context]*: The web browser client running **[app.py](file:///d:/projects/hybrid_rag%20-%20Copy/frontend/app.py)** receives the JSON response from the server, clears the loading spinner, and displays the answer text along with the source citation bullet points.
