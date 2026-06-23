@@ -164,3 +164,15 @@ The client submits the vector to the database to perform a nearest-neighbor quer
 * Variable: `results` (Type: Qdrant query response points object)
 * *[Execution Context]*: Queried inside **[semantic_retriever.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/semantic_retriever.py)**. The Qdrant engine performs cosine similarity searches on the `"rag_docs"` collection and returns the top 10 matches:
   * Variable: `semantic_results` (Type: `list[dict]`) = `[{"chunk_id": 1, "score": 0.95, ...}, {"chunk_id": 2, "score": 0.82, ...}, ...]`
+
+#### Step 8: Lexical Search & Index Construction
+Simultaneously, the keyword-based BM25 search path is executed:
+* Variable: `points` (Type: Qdrant scroll response payload list)
+* *[Execution Context]*: Executed inside **[bm25_retriever.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/bm25_retriever.py)**. The script scrolls the database to download up to 1,000 document texts, tokenizes them, constructs a `BM25Okapi` index in memory on the fly, scores the lowercase query words against the index, and returns the top 10 matches:
+  * Variable: `bm25_results` (Type: `list[dict]`) = `[{"chunk_id": 1, "score": 8.5, ...}, {"chunk_id": 3, "score": 6.2, ...}, ...]`
+
+#### Step 9: Score Normalization and Fusion
+The raw score lists are normalized and fused to balance semantic and lexical scores:
+* Variable: `combined_results` (Type: `dict` mapping chunk IDs to merged scores)
+* *[Execution Context]*: Managed by the `hybrid_search()` function inside **[hybrid_retriever.py](file:///d:/projects/hybrid_rag%20-%20Copy/backend/hybrid_retriever.py)**. It runs `normalize_scores()`, checks for division-by-zero, maps results into a dictionary, merges duplicate chunk IDs (e.g., combining the semantic and BM25 scores for `chunk_id=1` to form a final score of `1.0 + 1.0 = 2.0`), sorts the combined list in descending order, and returns the top 5 candidates:
+  * Variable: `retrieved_chunks` (Type: `list[dict]`) = `[{"chunk_id": 1, "final_score": 2.0, ...}, ...]`
