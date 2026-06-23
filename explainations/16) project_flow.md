@@ -124,3 +124,17 @@ sequenceDiagram
 ```
 
 ---
+
+## 3. Step-by-Step Execution Variable Trace Walkthrough
+
+This section maps the chronological flow of a query variable state, detailing how data transforms from plain text to program structures, database queries, model responses, and UI elements.
+
+#### Step 1: User Input
+The user types the question `"What is overfitting?"` in the browser interface and hits enter. Streamlit captures this input and assigns:
+* Variable: `query` (Type: `str`) = `"What is overfitting?"`
+* *[Execution Context]*: This interaction occurs in the Streamlit frontend script **[app.py](file:///d:/projects/hybrid_rag%20-%20Copy/frontend/app.py)**.
+
+#### Step 2: Serialization
+The frontend packages the query and submits it as a POST request using the `httpx` client:
+* Variable: `payload` (Type: `dict`) = `{"prompt": "What is overfitting?"}`
+* *[Execution Context]*: The client encodes this dictionary into a JSON string and transmits it over HTTP to `http://localhost:8000/chat` using **[app.py](file:///d:/projects/hybrid_rag%20-%20Copy/frontend/app.py)**.
