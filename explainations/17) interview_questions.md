@@ -58,3 +58,16 @@ This represents an $O(N)$ data transfer and index construction bottleneck. At sc
 3. **In-Memory Caching**: If using a local index is required, the BM25 index should be built *once* during document ingestion or startup, cached in memory, and updated incrementally using thread-safe write hooks."
 
 ---
+
+## Category 4: Reranking and Context Optimization
+
+### Question 5: What is the difference between a Bi-Encoder and a Cross-Encoder, and why do you use both in your pipeline?
+**Answer**: 
+"The difference lies in how they process queries and documents:
+* **Bi-Encoders** (e.g., our dense embedding model): Encode the query and the documents independently into separate vectors. Because the documents are pre-embedded and indexed in our database, we can perform fast similarity calculations (like Cosine distance) in milliseconds. However, because the query and document do not interact during encoding, it is less precise at capturing fine-grained relationships.
+* **Cross-Encoders** (e.g., our reranking model): Feed both the query and the document into the transformer network simultaneously. The self-attention layers compute token-to-token relationships between all query words and all document words. This yields highly accurate relevance scores but is computationally slow, making it impossible to query millions of documents in real-time.
+
+**Why we use both**:
+We implement a **Multi-Stage Retrieval** architecture. We use the Bi-Encoder (hybrid search) as a fast, high-recall filter to retrieve the top 5 candidates. Then, we pass only those 5 candidates to the Cross-Encoder Reranker. This gives us the speed of vector search combined with the high accuracy of Cross-Encoder attention."
+
+---
