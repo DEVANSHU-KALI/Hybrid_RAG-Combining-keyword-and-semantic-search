@@ -16,3 +16,15 @@ This document contains expected technical interview questions and comprehensive,
 * **Generation Stage**: The orchestrator builds a strict prompt template enclosing the top 3 passages and submits it asynchronously to a local **llama.cpp** server (`llama-server.exe`) running a quantized `Qwen 2.5 7B` model, which generates the final grounded response."
 
 ---
+
+## Category 2: Dense vs. Sparse Retrieval & Fusion
+
+### Question 2: Why did you build a hybrid search engine instead of just using vector embeddings?
+**Answer**: 
+"Vector embeddings (dense retrieval) excel at capturing conceptual semantics and synonyms (e.g., matching 'overfitting' with 'memorizing training data' even if the exact word isn't present). However, they have weaknesses:
+1. **Exact Matches**: They struggle with exact keyword lookups, product model numbers, specific user IDs, or code symbols.
+2. **Short Queries**: Short queries have sparse semantic vectors that Cosine similarity can easily misalign.
+
+By combining dense vectors with **BM25 (sparse retrieval)**, we capture both conceptual meaning and exact term matches. If a user queries a specific technical term like 'BM25Okapi', lexical search guarantees an exact term match, while dense search ensures conceptual coverage. This dual-path approach maximizes overall retrieval recall."
+
+---
