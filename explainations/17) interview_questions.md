@@ -28,3 +28,17 @@ This document contains expected technical interview questions and comprehensive,
 By combining dense vectors with **BM25 (sparse retrieval)**, we capture both conceptual meaning and exact term matches. If a user queries a specific technical term like 'BM25Okapi', lexical search guarantees an exact term match, while dense search ensures conceptual coverage. This dual-path approach maximizes overall retrieval recall."
 
 ---
+
+### Question 3: How does your score fusion mechanism work, and what are its mathematical limitations?
+**Answer**: 
+"Because dense similarity scores (e.g., Cosine similarity from `-1.0` to `1.0`) and sparse lexical scores (BM25 scores from `0.0` to $+\infty$) are on completely different mathematical scales, we cannot add them directly.
+1. **Normalization**: We apply **Min-Max Normalization** to both sets of scores independently to scale them onto a comparable range between `0.0` and `1.0`:
+   $$S_{\text{normalized}} = \frac{S_{\text{raw}} - S_{\text{min}}}{S_{\text{max}} - S_{\text{min}}}$$
+2. **Fusion**: We aggregate scores by chunk ID using **Simple Addition Fusion**:
+   $$\text{Final Score} = S_{\text{normalized\_dense}} + S_{\text{normalized\_sparse}}$$
+
+**Mathematical Limitations**:
+* **Outlier Sensitivity**: Min-Max normalization is highly sensitive to outliers. If one candidate has an extremely high BM25 score, it compresses the scores of all other candidates towards `0.0`, rendering the normalized differences negligible.
+* **Equal Weight Bias**: Simple addition assumes both dense and sparse models are equally important. In reality, one model is often cleaner than the other depending on query types. In production, we would use **Weighted Linear Fusion** ($\alpha \cdot S_{\text{dense}} + (1 - \alpha) \cdot S_{\text{sparse}}$) or a rank-based strategy like **Reciprocal Rank Fusion (RRF)**."
+
+---
