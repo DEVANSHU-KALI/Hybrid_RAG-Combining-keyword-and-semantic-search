@@ -96,3 +96,21 @@ This guarantees that each chunk contains a complete, semantically cohesive conce
 * **GPU Offloading**: We use the `-ngl 25` flag to offload 25 transformer layers to the GPU, while the CPU handles the remaining layers, optimizing system execution."
 
 ---
+
+## Category 6: Testing, Observability, and Metrics
+
+### Question 8: How do you evaluate the quality of your RAG pipeline? Explain the RAGAS metrics and how DeepEval extends them.
+**Answer**: 
+"We evaluate performance using an **LLM-as-a-Judge** framework using the **RAGAS** library, checking four metrics:
+1. **Faithfulness**: Verifies if the generated answer is derived *only* from the retrieved context, checking for hallucinations.
+2. **Answer Relevancy**: Evaluates if the generated answer directly addresses the user's question.
+3. **Context Precision**: Verifies if the retrieved chunks containing relevant information are ranked at the top.
+4. **Context Recall**: Checks if all the facts in the human-written ground truth are present in the retrieved chunks.
+
+**DeepEval Extension**:
+DeepEval extends these capabilities in several key ways:
+* **CI/CD Unit Testing**: DeepEval integrates with Pytest, allowing us to write evaluations as Python unit test assertions that fail if scores drop below a threshold, preventing regressions.
+* **G-Eval (Custom Metrics)**: Allows us to define custom evaluation criteria using natural language guidelines instead of hardcoded formulas.
+* **Guardrails**: Includes built-in checks for toxicity, bias, and compliance."
+
+---
