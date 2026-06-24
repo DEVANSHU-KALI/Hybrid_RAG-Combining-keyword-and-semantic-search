@@ -71,3 +71,15 @@ This represents an $O(N)$ data transfer and index construction bottleneck. At sc
 We implement a **Multi-Stage Retrieval** architecture. We use the Bi-Encoder (hybrid search) as a fast, high-recall filter to retrieve the top 5 candidates. Then, we pass only those 5 candidates to the Cross-Encoder Reranker. This gives us the speed of vector search combined with the high accuracy of Cross-Encoder attention."
 
 ---
+
+### Question 6: Explain the concept of Semantic Chunking. How is it different from traditional recursive text splitting?
+**Answer**: 
+"Traditional text splitting (like `RecursiveCharacterTextSplitter`) cuts text at static character limits or token lengths (e.g., every 500 characters, trying to split at newlines or spaces). This runs the risk of cutting a paragraph mid-sentence or separating related concepts into different chunks.
+
+**Semantic Chunking** uses vector embeddings to split text along logical semantic boundaries:
+1. It splits the document into individual sentences.
+2. It generates vector embeddings for each sentence using our embedding model.
+3. It measures the Cosine distance between consecutive sentences.
+4. It sets a threshold (e.g., the 75th percentile of all distance differences inside the document) and triggers a breakpoint (splits the text) only where the semantic difference between two adjacent sentences exceeds that threshold. 
+
+This guarantees that each chunk contains a complete, semantically cohesive concept, raising our downstream retrieval quality."
