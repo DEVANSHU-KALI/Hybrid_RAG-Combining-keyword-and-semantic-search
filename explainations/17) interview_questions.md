@@ -114,3 +114,13 @@ DeepEval extends these capabilities in several key ways:
 * **Guardrails**: Includes built-in checks for toxicity, bias, and compliance."
 
 ---
+
+### Question 9: How did you implement tracing and observability in your pipeline, and why is it important for production LLM systems?
+**Answer**: 
+"I implemented observability using **LangSmith**. In `rag_pipeline.py`, I decorated the main function `generate_answer()` with the `@traceable` decorator.
+
+**Why it is important**:
+In traditional backend development, debugging a function is linear. In LLM applications, execution paths are non-deterministic, involving nested database searches, prompt builders, and LLM calls. LangSmith hooks into our execution thread and logs:
+1. **Latency Breakdowns**: Tells us exactly how many milliseconds were spent on database retrieval vs. Cross-Encoder reranking vs. LLM generation.
+2. **Input/Output Visualizations**: Allows us to audit the exact context strings constructed and the exact prompts sent to the local llama.cpp server.
+3. **Prompt Debugging**: Allows us to check if the LLM followed system instructions, helping us troubleshoot hallucinations or formatting issues."
