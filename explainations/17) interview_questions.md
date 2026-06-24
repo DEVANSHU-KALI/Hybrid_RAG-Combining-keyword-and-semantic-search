@@ -42,3 +42,19 @@ By combining dense vectors with **BM25 (sparse retrieval)**, we capture both con
 * **Equal Weight Bias**: Simple addition assumes both dense and sparse models are equally important. In reality, one model is often cleaner than the other depending on query types. In production, we would use **Weighted Linear Fusion** ($\alpha \cdot S_{\text{dense}} + (1 - \alpha) \cdot S_{\text{sparse}}$) or a rank-based strategy like **Reciprocal Rank Fusion (RRF)**."
 
 ---
+
+## Category 3: Code Reviews and Performance Tuning
+
+### Question 4: There is a significant architectural bottleneck in the BM25 search path in your code. What is it, why is it bad, and how would you fix it in production?
+**Answer**: 
+"Yes. In `bm25_retriever.py`, on every user query, the script executes `client.scroll()` to download all document payloads (up to 1,000 items) from the Qdrant database, tokenizes them, and instantiates the `BM25Okapi` index in RAM *on the fly*.
+
+**Why it is bad**:
+This represents an $O(N)$ data transfer and index construction bottleneck. At scale (with millions of documents), downloading the entire database and rebuilding the index on every single API request will crash server memory, consume massive network bandwidth, and increase request latency to unacceptable levels.
+
+**Production Fixes**:
+1. **Qdrant Sparse Vectors**: Configure Qdrant's native sparse vector indices (e.g., using models like SPLADE). This allows both dense and sparse searches to run natively on Qdrant, returning fused results in a single network round-trip.
+2. **Dedicated Search Engine**: Use a dedicated full-text search engine like Elasticsearch or OpenSearch.
+3. **In-Memory Caching**: If using a local index is required, the BM25 index should be built *once* during document ingestion or startup, cached in memory, and updated incrementally using thread-safe write hooks."
+
+---
