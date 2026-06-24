@@ -83,3 +83,16 @@ We implement a **Multi-Stage Retrieval** architecture. We use the Bi-Encoder (hy
 4. It sets a threshold (e.g., the 75th percentile of all distance differences inside the document) and triggers a breakpoint (splits the text) only where the semantic difference between two adjacent sentences exceeds that threshold. 
 
 This guarantees that each chunk contains a complete, semantically cohesive concept, raising our downstream retrieval quality."
+
+---
+
+## Category 5: Local LLM Execution & Quantization
+
+### Question 7: How did you configure your LLM to run locally? Explain the role of Llama.cpp and quantization (GGUF).
+**Answer**: 
+"We run the Qwen 2.5 7B model locally on consumer hardware without cloud API dependencies.
+* **Llama.cpp**: A high-performance inference engine compiled in C/C++ that executes LLMs locally. We run `llama-server.exe` on port `8080` using the OpenAI-compatible REST API endpoint `/v1`.
+* **Quantization (GGUF)**: Running a 7B parameter model in FP16 precision requires over 14GB of VRAM. We use a **Q4_K_M quantized GGUF model**. Quantization maps model weights from 16-bit floating-point numbers to 4-bit integers. This reduces the file size to ~4.7GB, enabling the model to run smoothly on standard systems.
+* **GPU Offloading**: We use the `-ngl 25` flag to offload 25 transformer layers to the GPU, while the CPU handles the remaining layers, optimizing system execution."
+
+---
