@@ -168,3 +168,8 @@ To run automated RAGAS metrics benchmarking against the pipeline and export resu
 python -m evaluations.ragas_eval
 ```
 The results sheet will be saved to `evaluations/evaluation_results/ragas_results.xlsx`.
+
+---
+
+### Upgraded hybrid rag system. i.e. Production grade.
+This system was local till now and now its getting a upgrade where we care about all the things need to make this system a production grade. it covers each step clearly with explanation and also the implementation would also be a bit trickier but not hard. 
