@@ -57,12 +57,23 @@ if collection_name not in existing_collections:
         ),
     )
 
-    print(f"Collection '{collection_name}' created.")
+    client.create_payload_index(
+        collection_name=collection_name,
+        field_name="tenant_id",
+        field_schema=PayloadSchemaType.KEYWORD,
+    )
+    client.create_payload_index(
+        collection_name=collection_name,
+        field_name="user_id",
+        field_schema=PayloadSchemaType.KEYWORD,
+    )
+
+    print(f"Collection '{collection_name}' created with 768D vectors and Multi-Tenant Payload Indexes.")
 
 else:
     print(f"Collection '{collection_name}' already exists.")
 ```
-- **Lines 18–31**:
+- **Lines 27-48**:
   - We run an `if` condition: `if collection_name not in existing_collections`.
   - **If the collection is missing**:
     - We call `client.create_collection()`.
@@ -72,10 +83,31 @@ else:
     - We print a message confirming that the collection was created.
   - **If the collection already exists**:
     - We skip the creation step to avoid overwriting existing data, and print a message confirming it is already there.
+  - `create_payload_index`: A way to access specific chunks based on some condition, and here is some info about what is that.  
+    1. **Unindexed Payload Search (Slow $O(N)$ Scan):** By default, vectors are indexed in an HNSW graph, but payload metadata is stored as unindexed JSON. Without payload indexing, filtering by `tenant_id == "tenant_acme"` forces Qdrant to read every single vector point in memory one by one.
+    2. **Payload Index Acceleration (Sub-10ms Lookup):** `create_payload_index` builds an **Inverted B-Tree Index** on `tenant_id` and `user_id`. When a query arrives for `"tenant_acme"`, Qdrant instantly jumps to Acme Corp's exact vector subset and executes HNSW vector search ONLY on those vectors.
+    3. **Security Result:** Guarantees sub-10ms multi-tenant vector query performance with **zero cross-tenant data leakage**.
+
 
 ---
+## 3. Multi-Tenant Architecture: Single Shared Collection vs. Multi-Collection Misconception
 
-## 3. Execution Trace Flow & Step-by-Step Walkthrough
+### Architectural Clarification
+* **The Misconception:** Creating a payload index does NOT mean creating a new separate database collection for every user.
+* **Why Separate Collections Fail at Scale:** Creating 10,000 separate collections for 10,000 users crashes the database server due to memory overhead, file descriptor limits, and unmanageable database connection pools.
+* **Enterprise Multi-Tenant Design (Single Shared Collection):**
+  * ALL data across ALL organizations and users is stored in **ONE SINGLE COLLECTION** (`"rag_docs"`).
+  * Every document point has payload metadata tags: `"tenant_id": "org_acme"` and `"user_id": "usr_john"`.
+
+### Difference Between `tenant_id` and `user_id`
+* **`tenant_id` (Organization / Company Level):** Identifies the organization (e.g. `Acme Corp`). All employees of Acme Corp share `tenant_id = "tenant_acme"`.
+* **`user_id` (Individual User Level):** Identifies a specific employee (e.g. `usr_john_doe`).
+* **Why Index Both Separately?**
+  * Indexing `tenant_id` allows company-wide document searches (retrieving documents accessible to all employees of Acme Corp).
+  * Indexing `user_id` allows private document searches (retrieving personal documents uploaded by John Doe).
+
+
+## 4. Execution Trace Flow & Step-by-Step Walkthrough
 
 ### Flow Diagram
 ```
@@ -133,11 +165,12 @@ Let's trace the execution state for a fresh database start:
    }
    ```
    Qdrant allocates memory, constructs a vector index structure, and registers the collection `"rag_docs"`.
-6. **Console Feedback**: Prints `"Collection 'rag_docs' created."`.
+6. **create_payload_index**: A process through which we can extract some specific chunks very faster, known as multi-tenant architecture.
+7. **Console Feedback**: Prints `"Collection 'rag_docs' created."`.
 
 ---
 
-## 4. Deep Technical Concepts
+## 5. Deep Technical Concepts
 
 ### Vector Database
 A **vector database** (a database specifically optimized for storing, indexing, and querying multi-dimensional vector embeddings) is built to perform fast, high-dimensional similarity searches. Unlike relational databases (like MySQL) that query tables using exact matching columns, a vector database organizes data points by spatial coordinates and searches them using geometric distance.
@@ -151,7 +184,7 @@ To determine how close two text concepts are, the database evaluates the angle b
 
 ---
 
-## 5. Architectural Choices and Alternatives
+## 6. Architectural Choices and Alternatives
 
 ### Why Qdrant?
 Qdrant is written in Rust, making it fast and resource-efficient. It is highly suited for local developer environments because it can run inside a small Docker container and provides an excellent Python client interface.
