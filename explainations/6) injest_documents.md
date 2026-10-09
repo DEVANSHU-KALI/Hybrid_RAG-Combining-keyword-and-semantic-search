@@ -1,235 +1,206 @@
 # Script Explanation: `6) injest_documents.md`
 
 ## 1. Overview
-The primary role of the `injest_documents.py` script (spelled with a typo in the filename) is to perform document ingestion. It reads raw text files from the local directory `data/rag_concepts/`, processes their text through our semantic chunker, batches the resulting text segments to generate dense vector embeddings, maps them to database record structures (called **Points** in Qdrant), and uploads them to our Qdrant vector database collection.
+The primary role of `backend/injest_documents.py` is reading local documents (`.pdf` and `.txt`), extracting narrative text and structured tables, chunking text using `text_chunker.py`, embedding chunks into **768D dense vectors**, attaching multi-tenant metadata payloads (`tenant_id`, `user_id`), and asynchronously upserting points into the Qdrant vector database using **`AsyncQdrantClient`**.
 
 ---
 
-## 2. Code Walkthrough
+## 2. Line-by-Line & Block-by-Block Code Walkthrough
 
-### Imports and Configuration
-```python
-import os
-
-from qdrant_client import QdrantClient
-from qdrant_client.models import PointStruct
-
-from .embedding_model import embedding_model
-from .text_chunker import text_splitter
-```
-- **Lines 1–7**:
-  - We import `os` to browse local file directories.
-  - We import `QdrantClient` for database uploads and `PointStruct` to construct database rows.
-  - We load the embedding model (`embedding_model`) and semantic splitter (`text_splitter`) from our local folder.
+### Part A: Imports & Async Qdrant Client Setup (Lines 1–19)
 
 ```python
-client = QdrantClient(
-    host="localhost",
-    port=6333
-)
-
-COLLECTION_NAME = "rag_docs"
+1: import os
+2: import asyncio
+5: from qdrant_client import AsyncQdrantClient
+6: from qdrant_client.models import PointStruct
+9: from .embedding_model import embedding_model
+12: from .text_chunker import text_splitter, chunk_markdown_sections
+15: client = AsyncQdrantClient(host="localhost", port=6333)
+18: COLLECTION_NAME = "rag_docs"
 ```
-- **Lines 13–21**: Connects to the local Qdrant instance and sets our target collection name to `"rag_docs"`.
+* **Line 1 & 2 (`import os`, `import asyncio`)**: Standard libraries for directory traversal and running async loops.
+* **Line 5 & 6 (`from qdrant_client import AsyncQdrantClient`)**: **Production Upgrade!** Uses `AsyncQdrantClient` instead of synchronous `QdrantClient`. This ensures network calls to Qdrant never block the main Python Event Loop.
+* **Line 9 (`from .embedding_model...`)**: Imports `embedding_model` (`BAAI/bge-base-en-v1.5`, 768D HuggingFace embeddings).
+* **Line 12 (`from .text_chunker...`)**: Imports `text_splitter` (768D semantic chunker) and `chunk_markdown_sections` (markdown table preservation chunker).
+* **Line 15 (`client = AsyncQdrantClient(...)`)**: Connects asynchronously to local Qdrant container on port `6333`.
 
 ---
 
-### Ingestion Function - Part 1: Reading and Chunking
+### Part B: Multimodal PDF Table Extractor (`extract_pdf_content`, Lines 22–73)
+
 ```python
+22: def extract_pdf_content(file_path: str) -> list[dict]:
+```
+* Accepts a `.pdf` file path and returns a list of dictionaries containing page number, page text (with extracted Markdown tables), and table status.
+
+```python
+32:         import pdfplumber
+33:         with pdfplumber.open(file_path) as pdf:
+34:             for page_num, page in enumerate(pdf.pages, start=1):
+36:                 page_text = page.extract_text() or ""
+39:                 tables = page.extract_tables()
+```
+* Uses `pdfplumber` to extract grid tables from PDF pages and format them as Markdown table strings (`| Header | Header |`).
+
+---
+
+### Part C: Multi-Tenant Async Ingestion Engine (`ingest_documents`, Lines 77–182)
+
+```python
+77: async def ingest_documents(
+78:     folder_path: str,
+79:     tenant_id: str = "tenant_default",
+80:     user_id: str = "usr_admin"
+81: ):
+```
+* Defined as an **`async def`** function so it can be called inside live API web endpoints without blocking concurrent queries from other users.
+
+```python
+101:         if filename.endswith(".pdf"):
+102:             pdf_pages = extract_pdf_content(file_path)
+103:             for page_data in pdf_pages:
+104:                 chunks = chunk_markdown_sections(page_data["text"])
+124:         elif filename.endswith(".txt"):
+129:             chunks = text_splitter.create_documents([text])
+```
+* **PDFs:** Passes text to `chunk_markdown_sections()` to preserve tables.
+* **TXTs:** Passes text to `text_splitter.create_documents()` for 768D semantic percentile chunking.
+
+```python
+149:     embeddings = embedding_model.embed_documents(documents)
+```
+* Computes 768D vector embeddings for all document chunks in a single GPU/CPU batch.
+
+```python
+177:     await client.upsert(
+178:         collection_name=COLLECTION_NAME,
+179:         points=points
+180:     )
+```
+* **Line 177 (`await client.upsert(...)`)**: **Non-blocking DB Upsert!** Uploads points to Qdrant asynchronously. While network bytes are transferred, the asyncio event loop remains free to serve other incoming user search requests.
+
+```python
+184: if __name__ == "__main__":
+185:     asyncio.run(ingest_documents("data/rag_concepts", tenant_id="tenant_default", user_id="usr_admin"))
+```
+* Uses `asyncio.run()` when executing the script directly from the CLI.
+
+---
+
+## 3. Code History: Before vs. After
+
+### Before (Synchronous Ingestion Engine)
+```python
+client = QdrantClient(host="localhost", port=6333)
+
 def ingest_documents(folder_path: str):
-    documents = []
-    ids = []
-    sources = []
-    counter = 0
-
-    # Read TXT Files
-    for filename in os.listdir(folder_path):
-        if not filename.endswith(".txt"):
-            continue
-        file_path = os.path.join(
-            folder_path,
-            filename
-        )
-        with open(file_path, "r", encoding="utf-8") as file:
-            text = file.read()
-
-        # Semantic Chunking
-        chunks = text_splitter.create_documents([text])
-
-        # Store Chunk Data
-        for chunk in chunks:
-            documents.append(chunk.page_content)
-            ids.append(counter)
-            sources.append(filename)
-            counter += 1
+    ...
+    client.upsert(collection_name=COLLECTION_NAME, points=points) # Sync blocking network call
 ```
-- **Lines 26–57**:
-  1. We initialize three storage lists: `documents` (chunk texts), `ids` (chunk IDs), and **`sources`** (chunk file sources), along with a sequential ID `counter`.
-  2. We browse the directory using `os.listdir(folder_path)`. If a file doesn't end with `".txt"`, we ignore it.
-  3. We construct the full path using `os.path.join()` and open the file in read mode with UTF-8 encoding.
-  4. We call our `text_splitter` (the semantic chunker) to divide the text file into semantic chunks.
-  5. We loop through the generated chunks, appending their text to `documents`, assigning a unique sequential ID from the `counter`, appending the current `filename` to `sources`, and incrementing the counter. This maintains an exact index correlation between text, ID, and source file.
 
----
-
-### Ingestion Function - Part 2: Embedding Generation
+### After (Enterprise Non-Blocking Async Ingestion Engine)
 ```python
-    # Print Chunks
-    print("\n======= DOCUMENT CHUNKS =======\n")
-    for doc in documents:
-        print(doc)
-        print("-------------")
+client = AsyncQdrantClient(host="localhost", port=6333)
 
-    # Generate Embeddings
-    embeddings = embedding_model.embed_documents(documents)
-    print(
-        "\nEmbedding vector size:",
-        len(embeddings[0])
-    )
+async def ingest_documents(folder_path: str, tenant_id: str = "tenant_default", user_id: str = "usr_admin"):
+    ...
+    await client.upsert(collection_name=COLLECTION_NAME, points=points) # Non-blocking async network call
 ```
-- **Lines 62–74**:
-  - We print the raw chunk texts to the terminal for debugging.
-  - We invoke `embedding_model.embed_documents(documents)` to calculate vector embeddings.
-    - *Why this way?* We pass the entire list of chunks at once. This performs **batch embedding**, sending all documents in a single process rather than embedding them one by one. This is faster and computationally efficient.
 
 ---
 
-### Ingestion Function - Part 3: Point Construction & Database Upload
+## 4. Full Pipeline Execution Flow Diagram
+
+```
+                 Local Folder ("data/rag_concepts")
+                               │
+               ┌───────────────┴───────────────┐
+               ▼                               ▼
+          PDF Document                    TXT Document
+               │                               │
+    extract_pdf_content()               file.read()
+  (pdfplumber table extract)                   │
+               │                               ▼
+               ▼                     text_splitter.create_documents()
+   chunk_markdown_sections()       (768D Semantic Percentile Chunker)
+  (1000 char budget + table lock)              │
+               │                               │
+               └───────────────┬───────────────┘
+                               │
+                               ▼
+                embedding_model.embed_documents()
+                (Generates 768-dimensional vectors)
+                               │
+                               ▼
+               PointStruct Payload Tagging
+       (tenant_id, user_id, document_type, page_number)
+                               │
+                               ▼
+                    await client.upsert()
+        (Async Non-Blocking Qdrant Upsert: "rag_docs")
+```
+
+---
+
+## 5. Worked Real-World Ingestion Trace Example
+
+Below is a complete end-to-end trace showing how a real PDF document containing narrative text and a Markdown table gets parsed, chunked, embedded, and stored in Qdrant.
+
+### 1. Raw PDF Page Content (`file.pdf`, Page 1)
+```
+Q3 Financial Performance Report
+Summary of revenue and growth metrics for tenant_default.
+
+| Quarter | Revenue | Growth |
+| Q1 | $1.2M | +12% |
+| Q2 | $1.5M | +25% |
+
+All figures verified by internal audit.
+```
+
+### 2. Output of `extract_pdf_content("file.pdf")`
+`pdfplumber` detects the grid table and converts rows to Markdown table syntax:
 ```python
-    # Create Qdrant Points
-    points = []
-
-    for i in range(len(documents)):
-        points.append(
-            PointStruct(
-                id=ids[i],
-                vector=embeddings[i],
-                payload={
-                    "text": documents[i],
-                    "source": sources[i],
-                    "chunk_id": ids[i]
-                }
-            )
-        )
+[
+    {
+        "page_number": 1,
+        "text": "Q3 Financial Performance Report\nSummary of revenue and growth metrics for tenant_default.\n\n| Quarter | Revenue | Growth |\n| --- | --- | --- |\n| Q1 | $1.2M | +12% |\n| Q2 | $1.5M | +25% |\n\nAll figures verified by internal audit.",
+        "has_table": True
+    }
+]
 ```
-- **Lines 79–93**:
-  - We loop through the indices of our chunks to build `PointStruct` items.
-  - **Payload Mapping**: We map `"source": sources[i]`. This matches each chunk with the exact name of the file it was extracted from (retrieved from the `sources` index mapping), ensuring citations are accurate in downstream search queries.
 
-> [!NOTE]
-> **Developer Lesson Learned (Scope Leak Guard)**: 
-> In a previous iteration of this script, the payload was built using `"source": filename`. Because Python loops do not create block scopes, the variable `filename` leaked into the function scope and held the value of the *last file processed* by the outer loop. This caused all uploaded chunks to cite the last file read. We resolved this by introducing the `sources` list to explicitly track and align filenames to each text chunk index.
-
+### 3. Output of `chunk_markdown_sections(page_text)`
+`chunk_markdown_sections` processes lines sequentially, keeping table boundaries locked together:
 ```python
-    # Upload Points to Qdrant
-    client.upsert(
-        collection_name=COLLECTION_NAME,
-        points=points
-    )
-    print(
-        f"\n✅ Documents successfully ingested into '{COLLECTION_NAME}'"
-    )
-```
-- **Lines 97–103**: Calls `client.upsert` to upload the list of points to Qdrant. If a point has an ID that already exists in the collection, Qdrant overwrites it; otherwise, it inserts a new point.
-
----
-## 3. Execution Trace Flow & Step-by-Step Walkthrough
-
-### Flow Diagram
-```
-                     Folder Path: data/rag_concepts
-                                │
-                                ▼
-                       Loop Through Files
-                       (Extract filename)
-                                │
-                                ▼
-                        Read File Content
-                                │
-                                ▼
-                        Semantic Chunking
-                                │
-                ┌───────────────┼───────────────┐
-                ▼               ▼               ▼
-       Append Text to     Append ID to     Append filename
-        documents[]          ids[]          to sources[]
-                │               │               │
-                └───────────────┼───────────────┘
-                                ▼
-                       Loop Finished?
-                 ├── No  ──► Process next file
-                 └── Yes ──► Batch Embed Documents
-                                │
-                                ▼
-                     Create PointStruct Items:
-                      id=ids[i], vector=embeddings[i],
-                      payload={"text", "source": sources[i]}
-                                │
-                                ▼
-                       Upload (Upsert) to Qdrant
+chunks = [
+    "Q3 Financial Performance Report\nSummary of revenue and growth metrics for tenant_default.\n\n| Quarter | Revenue | Growth |\n| --- | --- | --- |\n| Q1 | $1.2M | +12% |\n| Q2 | $1.5M | +25% |\n\nAll figures verified by internal audit."
+]
 ```
 
----
+### 4. Output of `embedding_model.embed_documents(chunks)`
+Generates a 768-dimensional float vector:
+```python
+embeddings = [
+    [0.0142, -0.0521, 0.0891, ..., -0.0112] # 768 float values
+]
+```
 
-### Input and Output Specifications
-* **Input**: `folder_path` (Type: `str`) - The path to the folder containing source documents.
-* **Output**: Writes points containing IDs, embeddings, and payloads directly to Qdrant. Prints progress to the console.
-
----
-
-### Step-by-Step Variable Trace Walkthrough
-Assume `data/rag_concepts/` contains two files: `overfitting.txt` and `bias.txt`.
-
-1. **Loop File 1 (`overfitting.txt`)**:
-   - Split into 2 chunks: Chunk A, Chunk B.
-   - `documents` becomes: `["Chunk A text", "Chunk B text"]`.
-   - `ids` becomes: `[0, 1]`.
-   - `sources` becomes: `["overfitting.txt", "overfitting.txt"]`.
-   - `counter` becomes: `2`.
-
-2. **Loop File 2 (`bias.txt`)**:
-   - Split into 1 chunk: Chunk C.
-   - `documents` becomes: `["Chunk A text", "Chunk B text", "Chunk C text"]`.
-   - `ids` becomes: `[0, 1, 2]`.
-   - `sources` becomes: `["overfitting.txt", "overfitting.txt", "bias.txt"]`.
-   - `counter` becomes: `3`.
-   - **File-reading loop completes.**
-
-3. **Batch Embedding**:
-   - `embedding_model.embed_documents(documents)` runs, returning a list of 3 vectors: `[VecA, VecB, VecC]`.
-
-4. **Point Struct Loop ($i = 0$ to $2$):**
-   - **Index $i = 0$**: Creates `PointStruct(id=0, vector=VecA, payload={"text": "Chunk A text", "source": "overfitting.txt", ...})`.
-   - **Index $i = 1$**: Creates `PointStruct(id=1, vector=VecB, payload={"text": "Chunk B text", "source": "overfitting.txt", ...})`.
-   - **Index $i = 2$**: Creates `PointStruct(id=2, vector=VecC, payload={"text": "Chunk C text", "source": "bias.txt", ...})`.
-   - *Result*: All chunks are correctly mapped to their respective source files!
-
-5. **Upload**: Upserts these 3 points to Qdrant.
-
----
-
-## 4. Deep Technical Concepts
-
-### Batch Embeddings
-Generating embeddings is computationally expensive. Sending text to an embedding model one string at a time introduces significant latency overhead (each call has processing initialization and transfer overhead). **Batch Embedding** bundles a list of texts into a single request, allowing the model (especially on GPUs) to process them in parallel.
-
-### Qdrant PointStruct Schema
-A **Point** in Qdrant represents a single data record. It is defined by:
-* `id`: A unique integer or UUID.
-* `vector`: The dense embedding array of floats.
-* `payload`: A JSON object storing metadata (like raw text, source filename, chunk ID). Qdrant indexes payloads, allowing vector searches to be filtered by metadata fields (e.g., searching only within a specific source file).
-
----
-
-## 5. Architectural Choices and Alternatives
-
-### Why Batch Upsert?
-We construct a list of all points and perform a single `client.upsert()` call. This minimizes network round-trips between our application server and Qdrant.
-
-#### Alternatives and Trade-offs
-
-| Ingestion Method | Strategy | Pros | Cons |
-| :--- | :--- | :--- | :--- |
-| **Batch Upsert** *(Chosen)* | Reads all files, chunks them, embeds them in one batch, and performs one upload. | • High throughput.<br>• Minimal API network overhead. | • Higher memory usage (all documents and embeddings are loaded in RAM simultaneously). |
-| **Stream Processing** | Reads, chunks, embeds, and uploads one file (or one chunk) at a time. | • Low memory footprint.<br>• Suitable for large-scale migrations. | • High latency due to repeated network calls. |
-| **Queue-Based ingestion (Celery/RabbitMQ)** | Files are added to a queue, and background workers process them asynchronously. | • Highly scalable.<br>• Handles failures gracefully. | • Significant complexity and setup overhead. |
+### 5. Final Qdrant `PointStruct` Payload Inserted into Database
+```python
+PointStruct(
+    id=0,
+    vector=[0.0142, -0.0521, 0.0891, ..., -0.0112],
+    payload={
+        "text": "Q3 Financial Performance Report\nSummary of revenue...\n| Quarter | Revenue | Growth |...",
+        "source": "financial_report.pdf",
+        "chunk_id": 0,
+        "tenant_id": "tenant_default",
+        "user_id": "usr_admin",
+        "document_type": "pdf",
+        "page_number": 1,
+        "has_table": True
+    }
+)
+```

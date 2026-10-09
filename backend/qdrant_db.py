@@ -1,9 +1,19 @@
 # Imports QdrantClient for database initialization and HTTP model classes for vector & payload indexing schemas
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import VectorParams, Distance, PayloadSchemaType
+'''
+qdrant_client -> module (or package/library)
+QdrantClient / AsynQdrantClient -> class 
+VectorParams -> Pydantic Model (Class): A structured data schema class that defines and validates collection configuration parameters (such as vector dimension size and the distance metric).
+Distance and PayLoadSchemaType -> Enums (enum.Enum Classes): Enumeration types that define fixed sets of allowed constants (e.g., Distance.COSINE, Distance.DOT, Distance.EUCLID, or payload types like PayloadSchemaType.KEYWORD, PayloadSchemaType.INTEGER).
+'''
 
 # Initialize synchronous Qdrant client pointing to local Docker container on port 6333
 client = QdrantClient(host="localhost", port=6333)
+'''
+This is called instance of the class. when you are in other scripts explaining line by line, you can tell it like "here is the class instance from qdrant_db script" 
+'''
+
 
 # Target collection name in Qdrant database
 collection_name = "rag_docs"

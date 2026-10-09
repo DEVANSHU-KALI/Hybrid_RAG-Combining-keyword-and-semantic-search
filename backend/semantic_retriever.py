@@ -38,6 +38,6 @@ async def retrieve_chunks(query: str):
             "source": point.payload["source"],
             "chunk_id": point.payload["chunk_id"],
             "score": point.score
-        })
+        }) 
         
     return results_list
