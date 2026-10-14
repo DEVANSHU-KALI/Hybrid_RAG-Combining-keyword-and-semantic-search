@@ -1,268 +1,410 @@
- Script Explanation: `11) rag_pipeline.md`
+# Script Explanation: `11) rag_pipeline.md`
 
 ## 1. Overview
-The primary role of the `rag_pipeline.py` script is to orchestrate the entire end-to-end **Retrieval-Augmented Generation (RAG)** process. When a user asks a question, this script coordinates the retrieval modules to find relevant data, formats that data into a strict prompt structure, sends the request to our locally running language model, and returns the final answer along with document citations and source contexts.
-
-It implements:
-* **Hybrid Retrieval**: Queries `hybrid_search()` to get fused semantic/keyword candidates.
-* **Cross-Encoder Reranking**: Filters candidates down to the top 3 using `rerank_results()`.
-* **Prompt Engineering**: Inserts candidate text into a strict prompt template that forces the model to answer only using the provided documents.
-* **Local Inference Client**: Communicates via an OpenAI-compatible client with a locally hosted **llama.cpp** server running a quantized `Qwen 2.5 7B` model.
-* **Observability**: Utilizes LangSmith's `@traceable` decorator to log and visualize execution paths.
-
----
-
-## 2. Code Walkthrough
-
-### Imports and Client Configuration
-```python
-from openai import AsyncOpenAI
-
-from .hybrid_retriever import hybrid_search
-from .reranker import rerank_results
-
-from langsmith import traceable
-
-# OpenAI Client
-client = AsyncOpenAI(base_url="http://localhost:8080/v1",api_key="dummy")
-```
-- **Lines 1–9**:
-  - We import `AsyncOpenAI`, which is the standard SDK (Software Development Kit) used to call OpenAI services asynchronously.
-  - We import our retrieval orchestrations (`hybrid_search`, `rerank_results`) and the `traceable` decorator from the `langsmith` library.
-  - **Line 9 (The Local Client Connection)**: We initialize the `AsyncOpenAI` client pointing to a local address: `base_url="http://localhost:8080/v1"` with `api_key="dummy"`.
-    - *What is an API?* An API (Application Programming Interface) is a standardized set of rules that allows different software systems to talk to each other.
-    - *Why `api_key="dummy"`?* We are running a local model server (llama.cpp) on our own computer, which does not require cloud authentication or API keys. However, the OpenAI Python library is programmed to throw an error if the `api_key` argument is empty. Passing `"dummy"` satisfies the SDK's validation check while routing requests to our local server.
+The primary role of `backend/rag_pipeline.py` is orchestrating the complete end-to-end RAG workflow. It glues together the entire system:
+1. **Hybrid Retrieval (`hybrid_search`)**: Fetches candidate chunks using both 768D semantic search and BM25 keyword matching with dual tenant and user filters.
+2. **Cross-Encoder Reranking (`rerank_results`)**: Deeply scores query-chunk pairs with `bge-reranker-base` to distill down to the top 3 most relevant chunks.
+3. **Prompt & Context Assembly**: Formats strict grounding instructions so the LLM answers strictly from retrieved documents.
+4. **Server-Sent Events (SSE) Token Streaming (`stream_rag_answer`)**: Streams individual tokens in real-time as an asynchronous generator.
+5. **Time-To-First-Token (TTFT) Telemetry**: Measures the exact millisecond latency until the user sees the first word.
+6. **FinOps Token Cost Economics (`calculate_query_cost`)**: Calculates the financial cost per query based on prompt and completion token counts.
 
 ---
 
-### Core Pipeline Orchestration
-```python
-# Main RAG Pipeline
-@traceable
-async def generate_answer(query: str):
-```
-- **Lines 12–13**: 
-  - We attach the `@traceable` decorator. This links our function execution to **LangSmith** (an LLM application monitoring platform), logging performance metrics, token usage, and retrieval latency.
-  - We define the asynchronous function `generate_answer(query: str)`.
+## 2. Deep Line-by-Line Code Walkthrough
+
+---
+
+### Part A: Client Setup & Provider Configuration (Lines 1–25)
 
 ```python
-    # Hybrid Retrieval
-    retrieved_chunks = await hybrid_search(query)
-
-    # Reranking
-    reranked_chunks = await rerank_results(
-        query,
-        retrieved_chunks
-    )
+1: import os
+2: import json
+3: import time
+4: from typing import AsyncGenerator
+5: from openai import AsyncOpenAI
+6: from langsmith import traceable
+8: from .hybrid_retriever import hybrid_search
+9: from .reranker import rerank_results
 ```
-
-- **Lines 15–22**:
-  - We retrieve normalized semantic and BM25 candidate chunks by awaiting `hybrid_search(query)`.
-  - We pass these candidates to `rerank_results(query, retrieved_chunks)` to get the top 3 most relevant context blocks.
+* **Lines 1–6**: Standard libraries for environment variables, JSON serialization, wall-clock timing, typing definitions, and the official `AsyncOpenAI` client SDK.
+* **Line 6 (`@traceable`)**: LangSmith decorator that records traces for evaluation, debugging, and latency tracking.
+* **Lines 8–9**: Imports hybrid retrieval and Cross-Encoder reranking helpers.
 
 ```python
-    # Print Retrieved Sources
-    print("\n===== FINAL RETRIEVED CHUNKS =====\n")
-
-    for chunk in reranked_chunks:
-        print(f"Source: {chunk['source']}")
-        print(f"Chunk ID: {chunk['chunk_id']}")
-        print(f"Reranker Score: {chunk['reranker_score']}")
-        print("\n")
+12: GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+13: if GROQ_API_KEY and len(GROQ_API_KEY) > 5:
+14:     llm_client = AsyncOpenAI(
+15:         base_url="https://api.groq.com/openai/v1",
+16:         api_key=GROQ_API_KEY
+17:     )
+18:     DEFAULT_MODEL = "llama-3.3-70b-versatile"
+19: else:
+20:     llm_client = AsyncOpenAI(
+21:         base_url="http://localhost:8080/v1",
+22:         api_key="dummy"
+23:     )
+24:     DEFAULT_MODEL = "raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF"
 ```
-- **Lines 25–31**: Prints metadata and scores of the top 3 documents to the console.
+* **Lines 12–24 (Automatic Provider Switching)**:
+  * If a valid `GROQ_API_KEY` is present in `.env`, connects to Groq's ultra-fast cloud LPU inference API using `llama-3.3-70b-versatile`.
+  * If no API key is found, automatically falls back to a locally hosted `llama.cpp` or `vLLM` server at `http://localhost:8080/v1` running quantized `Qwen2.5-7B-Instruct`. Both expose the identical OpenAI-compatible `/v1/chat/completions` API!
 
 ---
 
-### Context and Citation Building
-```python
-    # Build Context
-    context = "\n\n".join(
-        [
-            chunk["text"]
-            for chunk in reranked_chunks
-        ]
-    )
-
-    # Build Citations
-    citations = list(
-        set(
-            [
-                chunk["source"]
-                for chunk in reranked_chunks
-            ]
-        )
-    )
-```
-- **Lines 34–49**:
-  - We compile our LLM context by joining the text of the top 3 reranked chunks using double newlines (`\n\n`).
-  - We extract the source filenames of the chunks. We wrap the extraction inside `set()` to remove duplicates (e.g., if multiple chunks came from the same file) and convert it back to a standard Python `list()`.
-
----
-
-### Prompt Engineering and LLM Inference
-```python
-    # Final Prompt
-    prompt = f"""
-You are a helpful AI assistant.
-
-Answer ONLY from the provided context.
-
-If the answer is not present in the context,
-say:
-"I could not find the answer in the provided documents."
-
-Context:
-{context}
-
-Question:
-{query}
-"""
-```
-
-- **Lines 51–66**: We construct a strict **system prompt template**. We embed the retrieved context and user question, instructing the model to answer *only* using the context and to output a specific fallback error message if the answer is missing. This prevents the LLM from hallucinating answers based on its generic training data.
+### Part B: FinOps Pricing Dictionary & `calculate_query_cost` (Lines 28–38)
 
 ```python
-    # Generate LLM Response
-    response = await client.chat.completions.create(
-        model="raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    )
+28: TOKEN_PRICING = {
+29:     "llama-3.3-70b-versatile": {"input": 0.59, "output": 0.79},
+30:     "raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF": {"input": 0.0, "output": 0.0},
+31:     "default": {"input": 0.50, "output": 0.50}
+32: }
+```
+* **Lines 28–32**: Pricing catalog storing prices in USD **per 1,000,000 tokens**.
+  * `llama-3.3-70b-versatile`: $0.59 per 1M input tokens, $0.79 per 1M output tokens.
+  * Local Qwen model: $0.00 (100% free on local hardware).
+  * `"default"`: $0.50 per 1M tokens fallback rate.
 
-    # Extract Final Answer
-    answer = response.choices[0].message.content
-
-    # Return Final Response
-    return {
-        "answer": answer,
-        "citations": citations,
-        "contexts": [
-        chunk["text"]
-        for chunk in reranked_chunks
-        ]
-    }
+```python
+35: def calculate_query_cost(model_name: str, prompt_tokens: int, completion_tokens: int) -> float:
+36:     pricing = TOKEN_PRICING.get(model_name, TOKEN_PRICING["default"])
+37:     cost = (prompt_tokens / 1_000_000 * pricing["input"]) + (completion_tokens / 1_000_000 * pricing["output"])
+38:     return round(cost, 6)
 ```
 
-- **Lines 69–90**:
-  - We call `client.chat.completions.create()` to submit the prompt.
-  - We request the model `"raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF"`, which matches the Qwen 2.5 7B model running locally via our llama.cpp server.
-  - We extract the string answer from the response object and return a structured dictionary containing the answer, deduplicated citation filenames, and raw context strings.
-
----
-
-## 3. Execution Trace Flow & Step-by-Step Walkthrough
-
-### Flow Diagram
+#### Detailed Breakdown of Line 36 (`TOKEN_PRICING.get`):
+```python
+pricing = TOKEN_PRICING.get(model_name, TOKEN_PRICING["default"])
 ```
-                     Input Query: "What is overfitting?"
-                                │
-                                ▼
-                       hybrid_search(query)
-                      [Gets Top Candidates]
-                                │
-                                ▼
-                     rerank_results(query, list)
-                       [Filters to Top 3]
-                                │
-                                ▼
-                   Deduplicate Source Citations
-                     (using set -> list)
-                                │
-                                ▼
-                    Build Prompt Context block
-                                │
-                                ▼
-                    Build Instructions Prompt
-                                │
-                                ▼
-                 Async API call to localhost:8080
-                  (Sends prompt using "dummy" key)
-                                │
-                                ▼
-                     llama.cpp Server Receives
-                    (Inference on Qwen 2.5 Q4)
-                                │
-                                ▼
-                    Extract Answer & Return
+* **Why not write `pricing = TOKEN_PRICING[model_name]`?**
+  In Python dictionaries, if you look up a key that doesn't exist (e.g. `TOKEN_PRICING["mistral-large"]`), Python crashes with a fatal `KeyError: 'mistral-large'`, which aborts the user's streaming connection!
+* **How `dict.get(key, fallback)` works:**
+  1. Searches `TOKEN_PRICING` for `model_name`.
+  2. If found, returns that model's dictionary (e.g. `{"input": 0.59, "output": 0.79}`).
+  3. If **NOT found** (an unlisted or newly switched model), it safely returns the fallback value: `TOKEN_PRICING["default"]`.
+* **Why have a `"default"` key at all?**
+  In production engineering, this is called **defensive programming**. If a DevOps engineer changes `DEFAULT_MODEL` in `.env` to a new model not yet added to `TOKEN_PRICING`, the cost calculator uses the safe default rather than crashing the API server.
+* **Cost Formula (Line 37)**:
+  $$\text{Cost} = \left(\frac{\text{prompt\_tokens}}{1{,}000{,}000} \times \text{input\_rate}\right) + \left(\frac{\text{completion\_tokens}}{1{,}000{,}000} \times \text{output\_rate}\right)$$
+
+---
+
+### Part C: Hybrid Retrieval, Reranking & Context Assembly (Lines 47–73)
+
+```python
+47: async def stream_rag_answer(
+48:     query: str, 
+49:     tenant_id: str = "tenant_default", 
+50:     user_id: str = "usr_admin"
+51: ) -> AsyncGenerator[str, None]:
+52:     start_time = time.time()
+53:     ttft_time = 0.0
+```
+* **Lines 47–51**: Defined as an `AsyncGenerator[str, None]`. Instead of returning a single string once at the end (`return answer`), it uses `yield` to push SSE data chunks continuously down the HTTP connection as tokens are generated.
+* **Lines 52–53**: Initializes high-precision timestamp to measure Time-To-First-Token (TTFT) and total latency.
+
+```python
+56:     retrieved_chunks = await hybrid_search(query, tenant_id=tenant_id, user_id=user_id, limit=10)
+59:     reranked_chunks = await rerank_results(query, retrieved_chunks, top_k=3)
+```
+* **Line 56**: Calls Stage-1 Hybrid Search to gather 10 candidate chunks with dual tenant and user security scoping.
+  * **Syntax Note (Positional vs. Keyword Arguments):** Notice `query` is passed directly as a value without `query=query`. In Python, the 1st mandatory parameter is conventionally passed **positionally**, while optional/configuration parameters (`tenant_id=tenant_id`, `user_id=user_id`, `limit=10`) are passed as **keyword arguments** (`key=value`) to explicitly name what we are overriding. Writing `hybrid_search(query=query, ...)` works 100% identically in Python.
+* **Line 59**: Calls Stage-2 Cross-Encoder Reranker (`bge-reranker-base`) to score semantic interactions and isolate the top 3 chunks (`top_k=3`). Here, `query` and `retrieved_chunks` are the two positional inputs, and `top_k=3` is the explicit keyword argument.
+
+```python
+62:     context = "\n\n".join([chunk["text"] for chunk in reranked_chunks])
+63:     citations = list(set([chunk["source"] for chunk in reranked_chunks]))
+65:     prompt = f"""You are a helpful enterprise AI assistant.
+66: Answer ONLY from the provided context. If the answer is not present, say: "I could not find the answer in the provided documents."
+67: 
+68: Context:
+69: {context}
+70: 
+71: Question:
+72: {query}
+73: """
+```
+* **Line 62**: Combines the 3 top chunks into one formatted context string separated by double newlines.
+* **Line 63**: `set(...)` deduplicates source filenames (e.g. `["q3_report.pdf"]`) for clean citations.
+* **Lines 65–73**: Strict system prompt enforcing zero-hallucination grounding.
+
+---
+
+### Part D: Metadata Emission Event (Lines 76–83)
+
+```python
+76:     metadata_event = {
+77:         "type": "metadata",
+78:         "citations": citations,
+79:         "contexts": [chunk["text"] for chunk in reranked_chunks],
+80:         "chunk_ids": [chunk.get("chunk_id") for chunk in reranked_chunks],
+81:         "tenant_id": tenant_id
+82:     }
+83:     yield f"data: {json.dumps(metadata_event)}\n\n"
 ```
 
----
+#### Why Emit Metadata BEFORE Any LLM Tokens?
+1. **Instant UI Rendering:** Retrieval and reranking finish in ~200ms. By pushing metadata first, the frontend (Streamlit / React) can immediately draw the citation chips, source badges, and expandable "View Retrieved Chunks" drawer while the LLM is still preparing its first token!
+2. **User Transparency & Trust:** Enterprise users see which documents were retrieved right away.
+3. **Why Include `chunk_ids`?**
+   * Normal users don't inspect integer IDs, but **production telemetry systems rely on them**.
+   * If a user clicks **Thumbs Down** ("Incorrect Answer") in the UI, the frontend sends back the `chunk_ids` (`[14, 29]`). This allows ML engineers to trace which exact database points caused a bad answer without exposing raw database tables.
+4. **SSE Format (`data: ...\n\n`)**:
+   * The W3C Server-Sent Events standard mandates that every message start with `data: ` and end with two newlines (`\n\n`). This tells the browser/client that the JSON packet is complete.
 
-### Input and Output Specifications
-* **Input**: `query` (Type: `str`) - The plain-text user query (e.g., `"what is overfitting?"`).
-* **Output**: A dictionary object (Type: `dict`) containing:
-  * `"answer"`: The text response generated by the local Qwen model.
-  * `"citations"`: A deduplicated list of source filenames.
-  * `"contexts"`: A list containing the raw text strings of the 3 retrieved document chunks.
+#### Does Yielding Metadata First Delay TTFT? (The 0.05ms Reality)
+**No!** Emitting metadata first takes less than $0.05\text{ milliseconds}$ (just stringifying a small JSON dictionary).
+Here is the exact online millisecond timeline:
 
----
+```
+T = 0 ms     ──► User sends query over HTTP
+T = 180 ms   ──► Qdrant Hybrid Search finishes
+T = 240 ms   ──► Cross-Encoder Reranking finishes
+T = 240.1 ms ──► yield metadata_event (JSON serialize takes ~0.05 ms!)
+T = 240.2 ms ──► LLM API request dispatched (await llm_client.chat.completions.create)
+T = 420 ms   ──► First LLM text token arrives over network socket (TTFT = 420 ms)
+```
 
-### Step-by-Step Variable Trace Walkthrough
-Let's trace a run for the query: `"what is overfitting?"`.
-
-1. **Query Input**: `query = "what is overfitting?"`.
-2. **Retrieval**: `hybrid_search` returns 5 candidates.
-3. **Reranking**: `rerank_results` scores candidates and outputs top 3.
-   - Chunk 1 text: `"Overfitting occurs when a model memorizes..."` source: `"concepts.txt"`
-   - Chunk 2 text: `"If a model is overfit, it fails on new data."` source: `"concepts.txt"`
-   - Chunk 3 text: `"Overfitting can be reduced with dropout."` source: `"techniques.txt"`
-4. **Context Synthesis**: Chunks are joined into `context = "Overfitting occurs... \n\n If a model is overfit... \n\n Overfitting can be..."`.
-5. **Citations Filtering**: Chunks contain sources `["concepts.txt", "concepts.txt", "techniques.txt"]`.
-   - `set(["concepts.txt", "concepts.txt", "techniques.txt"])` evaluates to `{"concepts.txt", "techniques.txt"}`.
-   - `list(...)` evaluates to `["concepts.txt", "techniques.txt"]`.
-6. **Prompt Assembly**: The context and query are inserted into the prompt template.
-7. **Local LLM Call**: The client submits the prompt to `http://localhost:8080/v1` targeting model `raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF`.
-   - The local llama.cpp server processes the request.
-   - Qwen 2.5 uses the context to formulate an answer: `"Overfitting is when a model memorizes training data. It can be reduced using dropout."`
-8. **Extraction & Return**: The answer is parsed and returned along with the citations list `["concepts.txt", "techniques.txt"]`.
+* **If metadata is emitted FIRST:** TTFT is **~420 ms**. At 240 ms, the user already sees citation chips appear on screen. The system feels instantaneous!
+* **If metadata is emitted LAST:** TTFT is **~419.95 ms** (a 0.05 ms difference, humanly imperceptible). But citations would remain hidden for 3 whole seconds until the full answer completes!
 
 ---
 
-## 4. Deep Technical Concepts
+### Part E: LLM Call with Streaming Configuration (Lines 85–90)
 
-### Why Use a Local Model for RAG?
-Using a local, self-hosted LLM (rather than a cloud service like OpenAI's GPT-4) has multiple engineering advantages:
-1. **Model Knowledge Restrictions**: RAG systems rely on the LLM extracting information *only* from the provided context. Large public models have vast general knowledge, which makes them prone to ignoring instructions and hallucinating answers based on their pre-training. Local models with smaller parameter sizes are often more obedient to direct system instructions.
-2. **Data Privacy**: Documents are processed entirely on your local machine, ensuring no sensitive data is sent to external servers.
-3. **Cost and Independence**: No API subscription or key management is required.
-
-### Quantization & GGUF Format
-Running a modern 7-billion parameter language model in 16-bit precision requires over 14GB of video RAM (VRAM) just to load, plus extra memory for processing text.
-* **Quantization**: A compression technique that converts the model's weights from 16-bit floating-point numbers (`FP16`) to lower precision configurations, such as 4-bit integers (`Q4`). 
-* **Q4_K_M Quantization**: Reduces the model file size from ~14GB to ~4.7GB, enabling it to run smoothly on standard consumer computers with 8GB or 16GB of RAM.
-* **GGUF File Format**: A file format optimized for fast loading and running on consumer hardware using CPU, GPU, or split CPU/GPU configurations.
-
-### Llama.cpp & Local Server Launch
-Llama.cpp is an open-source C/C++ execution engine designed to run quantized GGUF models locally with high performance.
-* **Setup Process**:
-  1. Download the executable zip folder from the official releases page of the **llama.cpp** GitHub repository. (Choose the CUDA GPU version if your system has an NVIDIA graphics card; otherwise, download the CPU version).
-  2. Unzip the folder and open the command prompt (`cmd`) in that directory.
-  3. Run the following command to download the model from Hugging Face and start the server:
-     ```cmd
-     .\llama-server.exe -hf raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF -ngl 25
-     ```
-     * `-hf`: Instructs llama.cpp to fetch the model directly from Hugging Face's registry.
-     * `-ngl 25`: Stands for "Number of GPU Layers". This offloads 25 layers of the network to the GPU (leaving the rest to be handled by the CPU), optimizing performance.
-  4. The server runs on `http://localhost:8080`, exposing an OpenAI-compatible API endpoint on port `8080/v1` and a web chat dashboard interface.
-  5. To change the model, just replace the model name "raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF" with any other model from hugging face, as the command is for -hf.
+```python
+85:     stream = await llm_client.chat.completions.create(
+86:         model=DEFAULT_MODEL,
+87:         messages=[{"role": "user", "content": prompt}],
+88:         stream=True,
+89:         stream_options={"include_usage": True}
+90:     )
+```
+* **Line 85 (`await llm_client.chat.completions.create(...)`)**: Standard OpenAI-compatible API call. Sends the prompt over HTTP to the model provider (Groq or local llama.cpp).
+* **Line 88 (`stream=True`)**:
+  * **What does this do?** Without `stream=True`, the server blocks for 4–6 seconds while the LLM writes all 300 words, then returns one huge JSON blob.
+  * With `stream=True`, the LLM server opens an HTTP chunked stream and sends each token packet over the wire as soon as the model predicts it!
+* **Line 89 (`stream_options={"include_usage": True}`)**:
+  * **Why is this needed?** In streaming mode, individual token packets contain only text deltas, not token counts. Adding `stream_options={"include_usage": True}` instructs Groq/OpenAI to append a final summary packet at the very end containing `prompt_tokens` and `completion_tokens`. Without this, token counts would be unavailable for cost calculation.
 
 ---
 
-## 5. Architectural Choices and Alternatives
+### Part F: The `async for chunk in stream:` Loop (Lines 96–110)
 
-### Why llama.cpp via OpenAI SDK?
-By directing the standard OpenAI SDK to our local llama.cpp endpoint, we keep our code modular. If we decide to swap our local model for a commercial cloud LLM (like GPT-4o-mini) in the future, we only need to change the `base_url` and `api_key` variables—the rest of our RAG pipeline logic remains identical.
+```python
+92:     prompt_tokens = 0
+93:     completion_tokens = 0
+94:     first_token_received = False
+96:     async for chunk in stream:
+```
 
-#### Alternatives and Trade-offs
+#### 1. What is `async for`?
+* A normal `for x in list:` iterates over items stored in local memory synchronously.
+* `async for chunk in stream:` iterates over an **asynchronous network stream**. When the next token is still being computed by the GPU/cloud, `async for` pauses this function and yields CPU control back to the FastAPI event loop so other users aren't blocked. As soon as the next token packet arrives over the socket, the loop wakes up and executes with `chunk`.
 
-| Inference Server | Strategy | Pros | Cons |
+#### 2. The One-Time Latch Pattern (Boolean Flag) for TTFT (Lines 97–99)
+```python
+97:         if not first_token_received and chunk.choices and chunk.choices[0].delta.content:
+98:             first_token_received = True
+99:             ttft_time = round((time.time() - start_time) * 1000, 2)
+```
+* **Before loop:** `first_token_received = False`.
+* **When Chunk 1 arrives:** `not first_token_received` is `not False` $\rightarrow$ **`True`**. The condition passes!
+  * `first_token_received` flips to **`True`**.
+  * `ttft_time` records the exact elapsed milliseconds from start.
+* **When Chunks 2, 3, 4 ... N arrive:**  
+  * `first_token_received` is now `True`, so `not first_token_received` evaluates to **`False`**.
+  * The `and` condition immediately short-circuits. Lines 98–99 are **never executed again** for the rest of the stream!
+  * This guarantees that TTFT records **strictly the first token's latency** and is never overwritten.
+
+#### 3. Safe Usage Extraction with `hasattr` (Lines 102–105)
+```python
+102:         # Check for usage stats in final streaming chunk
+103:         if hasattr(chunk, "usage") and chunk.usage:
+104:             prompt_tokens = chunk.usage.prompt_tokens
+105:             completion_tokens = chunk.usage.completion_tokens
+```
+* **What is `hasattr`?**
+  * `hasattr(object, "attribute_name")` returns a boolean: **`True` or `False`**.
+  * During streaming, the first 50 token chunks **do not possess** a `usage` attribute. If we wrote `if chunk.usage:`, Python would immediately crash with an unhandled `AttributeError: 'ChatCompletionChunk' object has no attribute 'usage'`.
+  * `hasattr(chunk, "usage")` verifies whether the attribute exists before attempting to read it!
+  * When the final summary packet arrives, `hasattr` returns `True`, and lines 104–105 safely extract `prompt_tokens` and `completion_tokens`.
+
+#### 4. Emitting Text Deltas (Lines 106–109)
+```python
+106:         if chunk.choices and chunk.choices[0].delta.content:
+107:             token_text = chunk.choices[0].delta.content
+108:             token_event = {"type": "token", "content": token_text}
+109:             yield f"data: {json.dumps(token_event)}\n\n"
+```
+* Extracts the newly generated text piece (e.g. `"According"`, `" to"`, `" the"`).
+* Wraps it into an SSE JSON event and yields it down the network connection.
+
+---
+
+### Part G: Telemetry Emission & Cost Calculation (Lines 112–130)
+
+```python
+112:     if prompt_tokens == 0:
+113:         prompt_tokens = len(prompt.split()) * 4 // 3
+114:         completion_tokens = 150
+116:     total_time = round(time.time() - start_time, 2)
+117:     estimated_cost = calculate_query_cost(DEFAULT_MODEL, prompt_tokens, completion_tokens)
+119:     telemetry_event = {
+120:         "type": "telemetry",
+121:         "ttft_ms": ttft_time,
+122:         "total_latency_sec": total_time,
+123:         "prompt_tokens": prompt_tokens,
+124:         "completion_tokens": completion_tokens,
+125:         "total_tokens": prompt_tokens + completion_tokens,
+126:         "estimated_cost_usd": estimated_cost,
+127:         "model_used": DEFAULT_MODEL
+128:     }
+129:     yield f"data: {json.dumps(telemetry_event)}\n\n"
+```
+* Emits the final `telemetry` event containing TTFT latency, total generation time, total tokens, and USD cost so the frontend telemetry dashboard can render live performance metrics.
+
+---
+
+### Part H: Non-Streaming Architecture & `getattr` Safe Inspection (Lines 134–162)
+
+```python
+134: async def generate_answer(query: str, tenant_id: str = "tenant_default", user_id: str = "usr_admin"):
+...
+146:     answer = response.choices[0].message.content
+147:     usage = getattr(response, "usage", None)
+148:     prompt_tokens = usage.prompt_tokens if usage else 0
+149:     completion_tokens = usage.completion_tokens if usage else 0
+151:     return {
+152:         "answer": answer,
+153:         "citations": citations,
+154:         "contexts": [c["text"] for c in reranked],
+155:         "chunk_ids": [c.get("chunk_id") for c in reranked],
+156:         "telemetry": { ... }
+157:     }
+```
+
+#### Why Does the Non-Streaming Code Look Different From the Streaming Code?
+* **Streaming (`stream_rag_answer`):**  
+  Uses an `AsyncGenerator` yielding discrete events over time (`type: metadata` $\rightarrow$ `type: token` $\rightarrow$ `type: telemetry`) for live web UI animations.
+* **Non-Streaming (`generate_answer`):**  
+  Returns a **single dictionary all at once**. It is specifically designed for:
+  1. Automated evaluation frameworks (like **Ragas** and **DeepEval**) which require a single return dictionary with `answer` and `contexts`.
+  2. Batch unit tests and developer scripts that do not open an SSE event stream.
+
+#### Deep Breakdown of Line 147 (`getattr`):
+```python
+usage = getattr(response, "usage", None)
+```
+`getattr(object, attribute_name, default_value)` safely retrieves an object's attribute with a fallback default.
+
+The **3 items** inside `getattr`:
+1. **`response`**: The object returned by `llm_client.chat.completions.create(...)`.
+2. **`"usage"`**: The name of the property we want to read (`response.usage`).
+3. **`None`**: The fallback value if `response` does not have `.usage`.
+
+* If `response.usage` exists $\rightarrow$ `usage = response.usage`.
+* If `response.usage` does not exist $\rightarrow$ `usage = None` (no crash!).
+
+#### Comparison: `hasattr` vs `getattr`
+
+| Tool | Syntax | Return Value | Primary Use Case |
 | :--- | :--- | :--- | :--- |
-| **llama.cpp** *(Chosen)* | C++ compiled local server. | • High speed on consumer hardware.<br>• Minimal dependencies.<br>• Easy split CPU/GPU offloading. | • Less optimized for concurrent multi-user production load. |
-| **Ollama** | Background service manager for local models. | • Extremely user-friendly interface.<br>• Automatic model downloads and updates. | • Higher abstraction (makes it harder to tune specific model loading parameters). |
-| **OpenAI Cloud API** | Cloud-based SaaS model. | • Zero local hardware constraints.<br>• World-class intelligence. | • High costs.<br>• Network latency.<br>• Data privacy issues. |
-| **vLLM** | Enterprise-grade local server. | • Extreme throughput and speed via PagedAttention. | • Requires enterprise Linux environment and powerful NVIDIA GPUs. |
+| **`hasattr`** | `hasattr(chunk, "usage")` | `True` or `False` | Checking if an attribute exists before executing an `if` block. |
+| **`getattr`** | `getattr(response, "usage", None)` | The attribute's value (or default) | Grabbing a value in a single line with safe fallback if missing. |
+
+---
+
+## 3. End-to-End Real World Execution Trace
+
+Let's walk through an actual execution trace using a cloud model (`llama-3.3-70b-versatile` on Groq).
+
+### Step 1: Input Query & Parameters
+* **`query`**: `"What was Acme Corp's operating margin in Q3 2024?"`
+* **`tenant_id`**: `"acme_corp"`
+* **`user_id`**: `"usr_analyst"`
+
+---
+
+### Step 2: Hybrid Retrieval & Reranking Results
+`hybrid_search` and `rerank_results` identify the top 3 chunks from Qdrant:
+* **Chunk 12** (`acme_financials_2024.pdf`, Page 4):  
+  `"In Q3 2024, Acme Corp achieved an operating margin of 18.4%, up 210 basis points year-over-year."`
+* **Chunk 13** (`acme_financials_2024.pdf`, Page 4):  
+  `"Total Q3 operating income was $42.5M compared to $35.1M in Q3 2023."`
+* **Chunk 29** (`shareholder_letter_q3.pdf`, Page 1):  
+  `"Management noted strong operating leverage across enterprise software subscriptions."`
+
+---
+
+### Step 3: SSE Event 1 Emitted — `metadata` (At $T = 210\text{ms}$)
+Before any text is generated, the generator yields the metadata event:
+```json
+data: {
+  "type": "metadata",
+  "citations": ["acme_financials_2024.pdf", "shareholder_letter_q3.pdf"],
+  "contexts": [
+    "In Q3 2024, Acme Corp achieved an operating margin of 18.4%...",
+    "Total Q3 operating income was $42.5M...",
+    "Management noted strong operating leverage..."
+  ],
+  "chunk_ids": [12, 13, 29],
+  "tenant_id": "acme_corp"
+}
+```
+*Result on frontend:* The Streamlit UI immediately displays source badges and opens the context accordion.
+
+---
+
+### Step 4: SSE Events 2..N Emitted — `token` Stream (Starting at $T = 312\text{ms}$)
+* At $T = 312\text{ms}$, the first token arrives:
+  * `ttft_time = 312.45` ms recorded via the one-time latch.
+  * Emitted: `data: {"type": "token", "content": "According"}\n\n`
+* Subsequent tokens streamed sequentially:
+  * `data: {"type": "token", "content": " to"}\n\n`
+  * `data: {"type": "token", "content": " the"}\n\n`
+  * `data: {"type": "token", "content": " provided"}\n\n`
+  * `data: {"type": "token", "content": " reports,"}\n\n`
+  * `data: {"type": "token", "content": " Acme"}\n\n`
+  * `data: {"type": "token", "content": " Corp's"}\n\n`
+  * `data: {"type": "token", "content": " operating"}\n\n`
+  * `data: {"type": "token", "content": " margin"}\n\n`
+  * `data: {"type": "token", "content": " in"}\n\n`
+  * `data: {"type": "token", "content": " Q3"}\n\n`
+  * `data: {"type": "token", "content": " 2024"}\n\n`
+  * `data: {"type": "token", "content": " was"}\n\n`
+  * `data: {"type": "token", "content": " 18.4%."}\n\n`
+
+---
+
+### Step 5: Final Chunk Usage & FinOps Cost Calculation
+In the final stream packet, Groq reports:
+* `prompt_tokens = 480`
+* `completion_tokens = 32`
+
+The cost calculator runs:
+$$\text{Input Cost} = \frac{480}{1{,}000{,}000} \times 0.59 = \$0.0002832$$
+$$\text{Output Cost} = \frac{32}{1{,}000{,}000} \times 0.79 = \$0.00002528$$
+$$\text{Total Cost} = \$0.0002832 + \$0.00002528 = \mathbf{\$0.000308}$$
+
+---
+
+### Step 6: SSE Final Event Emitted — `telemetry` (At $T = 1.34\text{s}$)
+```json
+data: {
+  "type": "telemetry",
+  "ttft_ms": 312.45,
+  "total_latency_sec": 1.34,
+  "prompt_tokens": 480,
+  "completion_tokens": 32,
+  "total_tokens": 512,
+  "estimated_cost_usd": 0.000308,
+  "model_used": "llama-3.3-70b-versatile"
+}
+```
+*Result on frontend:* UI displays metrics badges:
+* **TTFT:** `312.45 ms`
+* **Total Time:** `1.34 s`
+* **Tokens:** `512`
+* **Query Cost:** `$0.000308` (Less than 4 hundredths of a cent!)
