@@ -1,85 +1,91 @@
- Script Explanation: `10) reranker.md`
+# Script Explanation: `10) reranker.md`
 
 ## 1. Overview
-The primary role of the `reranker.py` script is to run the **Cross-Encoder reranking** stage of our retrieval pipeline. While the hybrid search retriever is extremely fast and effective at finding the top candidate text chunks from the database, it evaluates documents independently or via simple term matches. 
+The primary role of `backend/reranker.py` is executing **Stage-2 Cross-Encoder Precision Reranking**. 
 
-This script refines those results by:
-* Pairing each retrieved candidate chunk's text directly with the user's query.
-* Feeding these query-document pairs into a highly accurate **Cross-Encoder model** (`ms-marco-MiniLM-L-6-v2`) that evaluates direct textual interaction between them.
-* Re-scoring and re-sorting the documents based on their output attention correlation.
-* Selecting and returning only the top 3 most relevant context chunks to build the final prompt for the LLM.
+In production RAG systems, relying solely on Stage-1 retrieval (dense vector embeddings and BM25 keyword matching) creates a fundamental vulnerability: **false positive retrieval**. 
+* Vector search compares query and document embeddings **independently** (Bi-Encoder architecture).
+* BM25 matches keyword frequency without understanding context.
 
----
-
-## 2. Code Walkthrough
-
-### Imports and Model Loading
-```python
-from sentence_transformers import CrossEncoder
-
-# Load Cross-Encoder Model
-reranker_model = CrossEncoder(
-    "cross-encoder/ms-marco-MiniLM-L-6-v2"
-)
-```
-- **Lines 1–6**:
-  - We import the `CrossEncoder` class from the `sentence_transformers` library.
-  - We initialize our model using `"cross-encoder/ms-marco-MiniLM-L-6-v2"`. This loads the weights of a MiniLM transformer model that was pre-trained specifically on the MS-MARCO passage retrieval dataset. This model runs locally in CPU or GPU memory.
+`reranker.py` acts as a deep precision filter that:
+1. Takes the top candidate chunks (e.g. 10 candidates) retrieved by `hybrid_search`.
+2. Pairs each candidate chunk directly with the user's raw query: `[query, chunk_text]`.
+3. Passes these pairs through a specialized **Cross-Encoder Transformer Model** (`cross-encoder/ms-marco-MiniLM-L-6-v2`).
+4. Computes full **token-to-token multi-head cross-attention** between the query and the document text simultaneously.
+5. Re-scores and re-sorts candidates based on their deep contextual relevance, returning strictly the **top 3 highest precision chunks** for the LLM prompt.
 
 ---
 
-### Reranking Core Function
-```python
-async def rerank_results(query: str, retrieved_chunks: list):
-
-    # Create Query-Chunk Pairs
-    pairs = []
-
-    for chunk in retrieved_chunks:
-        pairs.append(
-            [
-                query,
-                chunk["text"]
-            ]
-        )
-```
-
-- **Lines 9–20**:
-  - We define the asynchronous function `rerank_results`.
-  - We initialize an empty list `pairs`.
-  - We loop through each document chunk retrieved by the hybrid search. For each candidate, we create a sub-list containing `[query, chunk["text"]]` and append it to `pairs`.
-    - *Why?* Cross-encoders do not process queries and documents in isolation. They require both texts to be concatenated together so they can analyze their intersection.
+## 2. Line-by-Line & Block-by-Block Code Walkthrough
 
 ```python
-    # Generate Reranker Scores
-    scores = reranker_model.predict(pairs)
+1: from sentence_transformers import CrossEncoder
+2: 
+3: # Load Cross-Encoder Model
+4: reranker_model = CrossEncoder(
+5:     "cross-encoder/ms-marco-MiniLM-L-6-v2"
+6: )
 ```
-- **Line 23**:
-  - We run `reranker_model.predict(pairs)`. This passes the query-document pairs through the transformer's multi-head attention layers in a single batch, outputting a list of floating-point similarity scores (logits).
+* **Line 1 (`from sentence_transformers import CrossEncoder`)**: Imports the `CrossEncoder` class from the `sentence_transformers` library. Unlike standard sentence embedding models (which output 768D vectors), `CrossEncoder` outputs a direct scalar relevance score for text pairs.
+* **Lines 4–6 (`reranker_model = CrossEncoder(...)`)**: Initializes the Cross-Encoder model in memory.
+  * `"cross-encoder/ms-marco-MiniLM-L-6-v2"`: A 6-layer MiniLM transformer fine-tuned specifically on Microsoft's MS-MARCO passage retrieval benchmark (over 500,000 human search queries).
+  * Runs locally on CPU or GPU with near-zero latency (~15–30ms for 10 candidates).
 
 ```python
-    # Attach Reranker Scores
-    for i in range(len(retrieved_chunks)):
-        retrieved_chunks[i]["reranker_score"] = float(scores[i])
+14: async def rerank_results(query: str, retrieved_chunks: list, top_k: int = 3) -> list[dict]:
+15:     if not retrieved_chunks:
+16:         return []
 ```
-- **Lines 26–27**:
-  - We iterate through our original list of candidate chunks.
-  - For each chunk, we add a new key `"reranker_score"`. We extract the corresponding prediction value from `scores` and cast it from a NumPy float32 type to a standard Python `float` using `float()`.
+* **Line 14 (`async def rerank_results(...)`)**: 
+  * Defined as an `async` function so it can be called seamlessly inside our asynchronous FastAPI pipeline (`await rerank_results(...)`).
+  * `top_k: int = 3`: Configurable parameter defining how many final chunks to return (default: 3).
+* **Lines 15–16 (Defensive Empty Guard)**: If `retrieved_chunks` is empty (e.g., no documents match the tenant filter in Qdrant), immediately returns `[]` to prevent indexing errors downstream.
 
 ```python
-    # Sort By Reranker Score
-    reranked_results = sorted(
-        retrieved_chunks,
-        key=lambda x: x["reranker_score"],
-        reverse=True
-    )
-
-    # Return Top 3 Chunks
-    return reranked_results[:3]
+18:     # 1. Create Query-Chunk Pairs
+19:     pairs = [
+20:         [query, chunk["text"]]
+21:         for chunk in retrieved_chunks
+22:     ]
 ```
-- **Lines 30–37**:
-  - We sort the chunks in descending order (highest score first) using their new `"reranker_score"` values.
-  - We return the top 3 highest-scoring results using the list slice syntax `[:3]`. These top 3 documents will serve as the grounding context for the LLM.
+* **Lines 19–22 (Pair Construction)**:
+  * Uses a clean list comprehension to build a list of 2-element sub-lists: `[[query, text_1], [query, text_2], ...]`.
+  * **Why pairs?** Unlike Bi-Encoders which embed the query alone and the document alone, a Cross-Encoder must receive both texts together so their tokens can cross-attend to one another.
+
+```python
+24:     # 2. Batch Cross-Encoder Inference
+25:     scores = reranker_model.predict(pairs)
+```
+* **Line 25 (`reranker_model.predict(pairs)`)**:
+  * Passes all pairs through the transformer in a single forward batch pass.
+  * Internally concatenates each pair: `[CLS] User Query [SEP] Document Text [SEP]`.
+  * Computes multi-head attention and outputs a 1D NumPy array of raw logit scores (e.g., `[4.82, -1.95, 2.14, ...]`).
+
+```python
+27:     # 3. Attach Reranker Scores
+28:     for i in range(len(retrieved_chunks)):
+29:         retrieved_chunks[i]["reranker_score"] = float(scores[i])
+```
+* **Lines 28–29 (Score Attachment & Type Casting)**:
+  * Loops through `retrieved_chunks` and adds a new key: `"reranker_score"`.
+  * **Why `float(scores[i])`?** `reranker_model.predict()` outputs values as NumPy `np.float32`. NumPy types are not JSON-serializable by FastAPI or Pydantic. Casting with `float()` converts them to standard Python floats, preventing serialization crashes.
+
+```python
+31:     # 4. Sort & Slice Top Precision Results
+32:     reranked_results = sorted(
+33:         retrieved_chunks,
+34:         key=lambda x: x["reranker_score"],
+35:         reverse=True
+36:     )
+37: 
+38:     return reranked_results[:top_k]
+```
+* **Lines 32–36 (Descending Score Sort)**:
+  * `sorted(...)`: Sorts the chunks based on the newly attached `"reranker_score"` using a lambda function key.
+  * `reverse=True`: Ensures the highest-scoring candidate appears first.
+* **Line 38 (`return reranked_results[:top_k]`)**:
+  * Slices the sorted candidate list and returns only the top `top_k` chunks (top 3).
+  * These 3 elite chunks form the grounding context injected into the final LLM prompt.
 
 ---
 
@@ -87,99 +93,171 @@ async def rerank_results(query: str, retrieved_chunks: list):
 
 ### Flow Diagram
 ```
-             Inputs: Query & List of Chunks
-                           │
-                           ▼
-                Construct [Query, Text] Pairs
-             [[Q, Text1], [Q, Text2], [Q, Text3]]
-                           │
-                           ▼
-                  Batch Cross-Encoder
-                       Inference
-                   (MiniLM Attention)
-                           │
-                           ▼
-                    Generate Logits
-                [Score1, Score2, Score3]
-                           │
-                           ▼
-              Attach Scores to original Dicts
-               (cast numpy float to float)
-                           │
-                           ▼
-                Sort Chunks Descending
-                 (Highest score first)
-                           │
-                           ▼
-                Slice & Return Top 3 Chunks
+              Inputs: User Query & Top 10 Candidate Chunks
+                                  │
+                                  ▼
+                     Empty Input Guard Check
+                     ├── If empty ──► Return []
+                     └── If chunks exist ──► Proceed
+                                  │
+                                  ▼
+                     Construct [Query, Text] Pairs
+                  [[Q, Text 1], [Q, Text 2], ... [Q, Text 10]]
+                                  │
+                                  ▼
+                   Batch Cross-Encoder Inference
+             Concatenates: [CLS] Q [SEP] Text [SEP]
+             Multi-Head Token Cross-Attention Layers
+                                  │
+                                  ▼
+                        Raw Logit Scores
+                   [3.85, -2.10, 5.42, 0.15, ...]
+                                  │
+                                  ▼
+                   Attach Scores to Chunk Dicts
+              (Cast np.float32 ──► Python float)
+                                  │
+                                  ▼
+                     Sort Chunks Descending
+                     (Highest Score First)
+                                  │
+                                  ▼
+                     Slice Top K ([:top_k])
+                    Output: Top 3 Chunks
 ```
 
 ---
 
 ### Input and Output Specifications
-* **Input**:
-  * `query` (Type: `str`): The user question (e.g., `"what is overfitting?"`).
-  * `retrieved_chunks` (Type: `list[dict]`): A list containing up to 5 document chunks returned by the hybrid search stage.
-* **Output**: A list containing the top 3 most relevant dictionary objects (Type: `list[dict]`), sorted in descending order by `"reranker_score"`.
+* **Inputs**:
+  * `query` (`str`): The raw user search prompt (e.g., `"What was Acme Corp's operating margin in Q3 2024?"`).
+  * `retrieved_chunks` (`list[dict]`): A list of candidate chunks returned by Stage-1 `hybrid_search` (typically 10 candidates).
+  * `top_k` (`int`, default: `3`): The number of final chunks to return.
+* **Output**: A list containing up to `top_k` dictionary objects (`list[dict]`), sorted in descending order by `"reranker_score"`. Each dictionary contains:
+  * `"text"`: The document chunk text.
+  * `"source"`: Origin filename.
+  * `"chunk_id"`: Database identifier.
+  * `"tenant_id"` & `"user_id"`: Tenant and user security tags.
+  * `"semantic_score"` & `"bm25_score"`: Stage-1 retrieval scores.
+  * `"final_score"`: Stage-1 hybrid score.
+  * `"reranker_score"`: Stage-2 Cross-Encoder logit score.
 
 ---
 
 ### Step-by-Step Variable Trace Walkthrough
-Let's trace what happens when `await rerank_results("what is overfitting?", retrieved_chunks)` is executed:
 
-1. **Constructing Pairs**:
-   - Query: `"what is overfitting?"`
-   - Retrieved chunks:
-     * Chunk 1: `"Overfitting occurs when a model memorizes training data."`
-     * Chunk 2: `"Rerankers improve search."`
-     * Chunk 3: `"Semantic search matches vectors."`
-   - Result:
-     ```python
-     pairs = [
-         ["what is overfitting?", "Overfitting occurs when a model memorizes training data."],
-         ["what is overfitting?", "Rerankers improve search."],
-         ["what is overfitting?", "Semantic search matches vectors."]
-     ]
-     ```
+Let's trace an execution with a real enterprise example:
 
-2. **Model Inference**:
-   - The pairs are fed into `reranker_model.predict(pairs)`.
-   - The model concatenates each pair with separation tokens: `[CLS] what is overfitting? [SEP] Overfitting occurs... [SEP]`.
-   - The model runs self-attention over the concatenated sequence. Because `"overfitting"` in the query directly matches and aligns with `"Overfitting"` and `"memorizes training data"` in Chunk 1, the model outputs a high logit score.
-   - Result: `scores = [3.85, -2.10, -1.80]`.
-3. **Updating Chunks**:
-   - Chunk 1 dictionary gains: `"reranker_score": 3.85`
-   - Chunk 2 dictionary gains: `"reranker_score": -2.10`
-   - Chunk 3 dictionary gains: `"reranker_score": -1.80`
-4. **Sorting and Slicing**:
-   - The chunks are already in descending order: `[Chunk 1 -> 3.85, Chunk 2 -> -2.10, Chunk 3 -> -1.80]`.
-   - Slicing `[:3]` returns the list of all three elements (re-sorted by the Cross-Encoder).
+#### 1. Input State
+* **`query`**: `"What was Acme Corp's operating margin in Q3 2024?"`
+* **Stage-1 Retrieved Chunks (Candidates from Hybrid Search)**:
+  * **Chunk A (ID 12)**: `"In Q3 2024, Acme Corp achieved an operating margin of 18.4%, up 210 basis points."` (Hybrid Score: 1.85)
+  * **Chunk B (ID 44)**: `"Acme Corp manufactures industrial widgets across European manufacturing plants."` (Hybrid Score: 1.62 — *Keyword match on "Acme Corp", but irrelevant to margin!*)
+  * **Chunk C (ID 13)**: `"Total Q3 2024 operating income reached $42.5M, reflecting margin expansion."` (Hybrid Score: 1.45)
+  * **Chunk D (ID 88)**: `"In Q3 2023, the previous operating margin was 16.3% before restructuring."` (Hybrid Score: 1.40 — *Mentions operating margin, but wrong year!*)
+
+#### 2. Pair Construction
+```python
+pairs = [
+    ["What was Acme Corp's operating margin in Q3 2024?", "In Q3 2024, Acme Corp achieved an operating margin of 18.4%..."],
+    ["What was Acme Corp's operating margin in Q3 2024?", "Acme Corp manufactures industrial widgets across European..."],
+    ["What was Acme Corp's operating margin in Q3 2024?", "Total Q3 2024 operating income reached $42.5M..."],
+    ["What was Acme Corp's operating margin in Q3 2024?", "In Q3 2023, the previous operating margin was 16.3%..."]
+]
+```
+
+#### 3. Cross-Encoder Model Inference (`predict(pairs)`)
+The model evaluates token cross-attention:
+* **Pair 1 (Chunk A)**: `"Q3 2024"` matches `"Q3 2024"`, and `"operating margin"` matches `"operating margin of 18.4%"`. Token attention aligns perfectly.  
+  $\rightarrow$ **Logit Score: `+5.82`** (Extremely high relevance)
+* **Pair 2 (Chunk B)**: Only `"Acme Corp"` matches; no tokens match `"operating margin"` or `"Q3 2024"`. The model severely penalizes it.  
+  $\rightarrow$ **Logit Score: `-3.45`** (Irrelevant false positive eliminated!)
+* **Pair 3 (Chunk C)**: `"Q3 2024"` and `"margin expansion"` align logically with operating margin.  
+  $\rightarrow$ **Logit Score: `+3.10`** (Strong supporting context)
+* **Pair 4 (Chunk D)**: Matches `"operating margin"`, but the model's self-attention recognizes `"Q3 2023"` conflicts with `"Q3 2024"`.  
+  $\rightarrow$ **Logit Score: `+0.85`** (Weak relevance due to year mismatch)
+
+#### 4. Updating Chunks & Sorting
+Chunks are re-ranked based on `"reranker_score"`:
+```python
+[
+    {"chunk_id": 12, "reranker_score": 5.82, "text": "In Q3 2024, Acme Corp achieved an operating margin of 18.4%..."},
+    {"chunk_id": 13, "reranker_score": 3.10, "text": "Total Q3 2024 operating income reached $42.5M..."},
+    {"chunk_id": 88, "reranker_score": 0.85, "text": "In Q3 2023, the previous operating margin was 16.3%..."},
+    {"chunk_id": 44, "reranker_score": -3.45, "text": "Acme Corp manufactures industrial widgets..."} # Dropped!
+]
+```
+
+#### 5. Slicing Top 3
+`[:top_k]` returns Chunks 12, 13, and 88. Notice how **Chunk 44** (which scored high in Stage-1 due to repeated keyword matches) was successfully filtered out by the Cross-Encoder!
 
 ---
 
 ## 4. Deep Technical Concepts
 
-### Bi-Encoder vs. Cross-Encoder
-Retrieval pipelines often use two types of transformer networks:
-1. **Bi-Encoders** (used in `embedding_model.py`): Encode the query and the documents independently into vectors. This allows documents to be indexed in advance. Similarity is computed using vector mathematics (cosine similarity). This is fast but doesn't allow the query and document to interact during encoding.
-2. **Cross-Encoders** (used here): Feed the query and document into the transformer network simultaneously. The self-attention layers compute relationships between every word in the query and every word in the document. This is highly accurate but computationally expensive, making it too slow to scan millions of documents in a database.
+### 1. Bi-Encoder vs. Cross-Encoder Architecture
 
-### Multi-Stage Retrieval & Reranking
-To balance speed and accuracy, modern search engines use a **Multi-Stage Retrieval** architecture:
-* **Stage 1 (Retrieval)**: A fast, lightweight retriever (like our hybrid Dense Vector + BM25 search) scans millions of documents and narrows them down to a small candidate list (e.g., top 10).
-* **Stage 2 (Reranking)**: A slower, highly accurate model (the Cross-Encoder) re-evaluates the candidate list and filters them to the absolute best (e.g., top 3).
+```
+                 BI-ENCODER (Stage 1: Qdrant)
+ Query ──► [Transformer] ──► Vector Q ──┐
+                                        ├── Cosine Angle (Dot Product)
+ Doc   ──► [Transformer] ──► Vector D ──┘
+ (Query and Document NEVER see each other during encoding)
+
+                CROSS-ENCODER (Stage 2: Reranker)
+ [CLS] Query [SEP] Document [SEP] ──► [Transformer with Cross-Attention] ──► Logit Score
+ (Every Query token computes self-attention with every Document token)
+```
+
+| Metric | Bi-Encoder (Embedding Model) | Cross-Encoder (Reranker) |
+| :--- | :--- | :--- |
+| **Input** | Query and Document encoded **separately** | Query and Document concatenated **together** |
+| **Token Interaction** | ❌ None (Vectors compared via dot product) | ✅ Full Multi-Head Self-Attention across all tokens |
+| **Speed** | $O(\log N)$ via HNSW index (1–5ms for millions of vectors) | $O(N)$ transformer forward pass (~15–30ms for 10 pairs) |
+| **Accuracy** | Good for broad recall; misses subtle logic/negations | State-of-the-art precision; understands exact phrasing and constraints |
+| **Scalability** | Can search 10,000,000 documents | Cannot search millions; only viable over top 10–50 candidates |
+
+---
+
+### 2. Multi-Stage Retrieval Pattern (Funnel Architecture)
+
+To achieve both **sub-50ms speed** and **human-level precision**, enterprise search uses a two-stage funnel:
+
+```
+  Stage 1: High Recall (Hybrid Search: 768D Vector + BM25)
+  Database: 1,000,000 Chunks  ──►  Retrieves Top 10 Candidates (Latency: ~20ms)
+                                           │
+                                           ▼
+  Stage 2: High Precision (Cross-Encoder Reranker)
+  Filters: 10 Candidates     ──►  Selects Top 3 Elite Chunks   (Latency: ~25ms)
+                                           │
+                                           ▼
+  LLM Generation Context: Strictly Top 3 Grounded Chunks!
+```
+
+---
+
+### 3. Why Can Reranker Scores Be Negative?
+Unlike Cosine Similarity (which ranges from `-1.0` to `+1.0`) or normalized BM25 (which ranges from `0.0` to `1.0`), Cross-Encoder outputs are **unnormalized classification logits**:
+* **Positive Logits ($> 0.0$):** The model predicts the document is relevant to the query (e.g. `+3.8` to `+8.5`).
+* **Negative Logits ($< 0.0$):** The model predicts the document is irrelevant or a false positive distractor (e.g. `-2.1` to `-6.0`).
+* Because sorting only cares about relative ranking (`reverse=True`), raw logits do not need sigmoid conversion to preserve order.
 
 ---
 
 ## 5. Architectural Choices and Alternatives
 
-### Why cross-encoder/ms-marco-MiniLM-L-6-v2?
-This model is built on the MiniLM architecture (only 6 transformer layers), meaning it is highly compressed and performs inference extremely fast on standard CPUs. It has been fine-tuned on MS-MARCO (Microsoft's search dataset), making it exceptionally accurate at identifying query-passage relevance.
+### Why `cross-encoder/ms-marco-MiniLM-L-6-v2`?
+* **Architecture:** 6-layer MiniLM transformer with 22.7 million parameters.
+* **Footprint:** Requires only ~80MB of RAM/VRAM.
+* **Inference Speed:** Evaluates 10 candidate pairs in **under 25 milliseconds** on standard laptop CPUs without requiring dedicated GPU hardware.
 
-#### Alternatives and Trade-offs
+#### Model & Service Comparison Matrix
 
-| Reranker Model / API | Strategy | Pros | Cons |
-| :--- | :--- | :--- | :--- |
-| **MiniLM Cross-Encoder** *(Chosen)* | Lightweight transformer running locally. | • Fast local inference (~10-50ms for small sets).<br>• Fully open-source and free. | • Limited to small input token lengths (512 tokens). |
-| **Cohere Rerank API** | Cloud-based commercial reranker service. | • State-of-the-art accuracy.<br>• Can handle very large candidate lists and contexts. | • Requires paid subscription API keys.<br>• High network latency. |
-| **LLM-as-a-Ranker** | Prompting an LLM (like GPT-4) to rank retrieved text blocks. | • Can perform complex reasoning to determine ranking. | • Extremely slow.<br>• High cost and token consumption. |
+| Reranker Solution | Architecture | Typical Latency | Cost | Best Used For |
+| :--- | :--- | :--- | :--- | :--- |
+| **MiniLM-L-6-v2** *(Chosen)* | 6-layer Cross-Encoder | **~15–25ms** (Local CPU) | **$0.00** (Free, Open-Source) | Production CPU deployments, edge devices, high-throughput pipelines. |
+| **BAAI/bge-reranker-base** | 12-layer RoBERTa Cross-Encoder | ~50–80ms (GPU recommended) | **$0.00** (Free, Open-Source) | Complex technical documents requiring deeper transformer layers. |
+| **Cohere Rerank v3 API** | Proprietary cloud model | ~150–350ms (Network API) | ~$1.00 / 1,000 queries | Cloud-first setups with zero on-prem compute. |
+| **ColBERTv2 (Late Interaction)**| Token-level MaxSim | ~10–20ms | $0.00 (Self-hosted) | Large candidate pools (top 100) requiring vector-speed cross-interaction. |
+| **LLM-as-a-Ranker (e.g. GPT-4)**| Autoregressive LLM Prompt | ~1,500–3,000ms | High API token cost | Research experiments; far too slow and expensive for live user search. |
