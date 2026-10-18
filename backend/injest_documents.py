@@ -184,7 +184,7 @@ async def ingest_documents(
 
 
 if __name__ == "__main__":
-    asyncio.run(ingest_documents("data/rag_concepts", tenant_id="tenant_default", user_id="usr_admin"))
+    asyncio.run(ingest_documents("data", tenant_id="tenant_default", user_id="usr_admin"))
 
 
 
