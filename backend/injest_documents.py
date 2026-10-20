@@ -19,44 +19,90 @@ client = AsyncQdrantClient(host="localhost", port=6333)
 COLLECTION_NAME = "rag_docs"
 
 
-# CONCEPT: Multimodal PDF & Markdown Table Parsing Utility
+# CONCEPT: Multimodal PDF & Bounding-Box Markdown Table Parsing Utility
 def extract_pdf_content(file_path: str) -> list[dict]:
     """
-    Extracts narrative text and structured tables from PDF files.
-    Converts raw tables into Markdown table strings (| Header | Header |) 
-    so column headers and tabular mathematical relationships remain intact inside vector chunks.
+    Extracts narrative text and structured tables from PDF files in true reading order.
+    Uses bounding-box table detection (page.find_tables()) to extract narrative text
+    strictly outside the tables and replaces the table regions with clean Markdown tables.
+    This prevents duplicate table text and avoids unformatted run-on table text inside prose chunks.
     """
     pages_content = []
     
     try:
-        # Import pdfplumber library for precise PDF layout and table extraction
+        # Import pdfplumber library for layout inspection and table extraction
         import pdfplumber
         with pdfplumber.open(file_path) as pdf:
             for page_num, page in enumerate(pdf.pages, start=1):
-                # 1. Extract regular narrative text from PDF page
-                page_text = page.extract_text() or ""
-                
-                # 2. Extract tables from PDF page and format as Markdown
-                tables = page.extract_tables()
-                table_markdowns = []
-                for table in tables:
-                    if not table:
+                try:
+                    tables = page.find_tables()
+                    
+                    # If page has no tables, extract regular narrative text
+                    if not tables:
+                        page_text = page.extract_text() or ""
+                        pages_content.append({
+                            "page_number": page_num,
+                            "text": page_text.strip(),
+                            "has_table": False
+                        })
                         continue
-                    # Convert row lists into Markdown table strings (| Header 1 | Header 2 |)
-                    headers = [str(cell or "").strip() for cell in table[0]]
-                    md_rows = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * len(headers)) + " |"]
-                    for row in table[1:]:
-                        clean_row = [str(cell or "").strip() for cell in row]
-                        md_rows.append("| " + " | ".join(clean_row) + " |")
-                    table_markdowns.append("\n".join(md_rows))
-                
-                # Combine page text with Markdown tables
-                full_page_text = page_text + "\n\n" + "\n\n".join(table_markdowns)
-                pages_content.append({
-                    "page_number": page_num,
-                    "text": full_page_text.strip(),
-                    "has_table": len(tables) > 0
-                })
+
+                    # Sort tables vertically from top to bottom by their vertical coordinate (bbox[1])
+                    tables = sorted(tables, key=lambda t: t.bbox[1])
+                    
+                    page_elements = []
+                    prev_bottom = 0.0
+
+                    for table_obj in tables:
+                        t_bbox = table_obj.bbox  # (x0, top, x1, bottom)
+                        top = t_bbox[1]
+                        bottom = t_bbox[3]
+
+                        # 1. Extract narrative text strictly ABOVE this table
+                        if top > prev_bottom:
+                            text_above = page.crop((0, prev_bottom, page.width, top)).extract_text() or ""
+                            if text_above.strip():
+                                page_elements.append(text_above.strip())
+
+                        # 2. Extract structured table cells and convert to Markdown
+                        raw_table = table_obj.extract()
+                        if raw_table and len(raw_table) > 0:
+                            # Clean cell text and replace internal newlines with space to preserve Markdown row integrity
+                            headers = [str(cell or "").strip().replace("\n", " ") for cell in raw_table[0]]
+                            md_rows = [
+                                "| " + " | ".join(headers) + " |",
+                                "| " + " | ".join(["---"] * len(headers)) + " |"
+                            ]
+                            for row in raw_table[1:]:
+                                clean_row = [str(cell or "").strip().replace("\n", " ") for cell in row]
+                                md_rows.append("| " + " | ".join(clean_row) + " |")
+                            
+                            page_elements.append("\n".join(md_rows))
+
+                        # Update boundary to avoid re-extracting table text
+                        prev_bottom = max(prev_bottom, bottom)
+
+                    # 3. Extract narrative text strictly BELOW the last table
+                    if prev_bottom < page.height:
+                        text_below = page.crop((0, prev_bottom, page.width, page.height)).extract_text() or ""
+                        if text_below.strip():
+                            page_elements.append(text_below.strip())
+
+                    # Assemble page text in authentic document flow: Text -> Table (MD) -> Text
+                    full_page_text = "\n\n".join(page_elements)
+                    pages_content.append({
+                        "page_number": page_num,
+                        "text": full_page_text.strip(),
+                        "has_table": True
+                    })
+                except Exception as page_err:
+                    # Fallback to standard text extraction if bounding-box cropping encounters an anomaly
+                    page_text = page.extract_text() or ""
+                    pages_content.append({
+                        "page_number": page_num,
+                        "text": page_text.strip(),
+                        "has_table": False
+                    })
     except ImportError:
         # Fallback to PyPDF or basic text reader if pdfplumber is not installed
         try:
@@ -72,6 +118,7 @@ def extract_pdf_content(file_path: str) -> list[dict]:
             print(f"⚠️ PDF extraction error for {file_path}: {e}")
             
     return pages_content
+
 
 
 # CONCEPT: Multi-Tenant Async Ingestion Engine
@@ -110,6 +157,12 @@ async def ingest_documents(
                 # Chunk page text using Markdown table-aware section chunker
                 chunks = chunk_markdown_sections(page_text)
                 for chunk_text in chunks:
+                    # Detect if THIS specific chunk contains a Markdown table
+                    chunk_has_table = any(
+                        line.strip().startswith("|") and line.strip().endswith("|")
+                        for line in chunk_text.split("\n")
+                    )
+
                     documents.append(chunk_text)
                     ids.append(counter)
                     sources.append(filename)
@@ -118,7 +171,7 @@ async def ingest_documents(
                         "user_id": user_id,
                         "document_type": "pdf",
                         "page_number": page_data["page_number"],
-                        "has_table": page_data["has_table"]
+                        "has_table": chunk_has_table
                     })
                     counter += 1
                     

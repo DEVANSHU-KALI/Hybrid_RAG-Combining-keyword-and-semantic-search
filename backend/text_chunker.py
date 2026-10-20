@@ -27,26 +27,34 @@ def chunk_markdown_sections(text: str, max_chunk_size: int = 1000) -> list[str]:
 
     for line in lines:
         is_table_line = line.strip().startswith("|") and line.strip().endswith("|")
-        
-        # If transitioning into or out of a Markdown table
-        if is_table_line:
-            in_table = True
-        elif in_table and not is_table_line:
-            in_table = False
-
         line_len = len(line) + 1
-        # Avoid breaking a table in half even if it reaches max_chunk_size
-        if current_length + line_len > max_chunk_size and not in_table:
-            if current_chunk:
-                chunks.append("\n".join(current_chunk))
-                current_chunk = []
-                current_length = 0
 
+        # Check if we should split before adding this line:
+        # 1. We've exceeded max_chunk_size AND we are not currently inside a table
+        # 2. Or a table is starting and current_chunk is already substantial (> 500 chars)
+        should_split = False
+        if not in_table and current_chunk:
+            if current_length + line_len > max_chunk_size:
+                should_split = True
+            elif is_table_line and current_length > (max_chunk_size // 2):
+                should_split = True
+
+        if should_split:
+            chunk_str = "\n".join(current_chunk).strip()
+            if chunk_str:
+                chunks.append(chunk_str)
+            current_chunk = []
+            current_length = 0
+
+        # Update in_table status for subsequent lines
+        in_table = is_table_line
         current_chunk.append(line)
         current_length += line_len
 
     if current_chunk:
-        chunks.append("\n".join(current_chunk))
+        chunk_str = "\n".join(current_chunk).strip()
+        if chunk_str:
+            chunks.append(chunk_str)
 
     return chunks
 

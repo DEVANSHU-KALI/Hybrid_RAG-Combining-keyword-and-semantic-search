@@ -2,26 +2,39 @@ import os
 import json
 import time
 from typing import AsyncGenerator
+from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from langsmith import traceable
 
 from .hybrid_retriever import hybrid_search
 from .reranker import rerank_results
 
-# Multi-Provider Client Setup (Groq API or Local llama.cpp fallback)
+# Load environment variables from .env
+load_dotenv()
+
+# Multi-Provider Client Setup (Local llama.cpp/LM Studio or Groq Cloud API)
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").lower()
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-if GROQ_API_KEY and len(GROQ_API_KEY) > 5:
+LOCAL_LLM_URL = os.getenv("LOCAL_LLM_URL", "http://localhost:8080/v1")
+LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+# Selection Logic:
+# 1. If LLM_PROVIDER == 'local' -> Force Local LLM (even if GROQ_API_KEY is present)
+# 2. If LLM_PROVIDER == 'groq'  -> Force Groq Cloud API
+# 3. Default fallback: If LLM_PROVIDER is unset, prefer Groq if key exists, otherwise Local
+if LLM_PROVIDER == "local" or (not LLM_PROVIDER and (not GROQ_API_KEY or len(GROQ_API_KEY) <= 5)):
+    llm_client = AsyncOpenAI(
+        base_url=LOCAL_LLM_URL,
+        api_key="dummy"
+    )
+    DEFAULT_MODEL = LOCAL_LLM_MODEL
+else:
     llm_client = AsyncOpenAI(
         base_url="https://api.groq.com/openai/v1",
         api_key=GROQ_API_KEY
     )
-    DEFAULT_MODEL = "llama-3.3-70b-versatile"
-else:
-    llm_client = AsyncOpenAI(
-        base_url="http://localhost:8080/v1",
-        api_key="dummy"
-    )
-    DEFAULT_MODEL = "raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF"
+    DEFAULT_MODEL = GROQ_MODEL
 
 
 # CONCEPT: FinOps Pricing Dictionary (Per 1 Million Tokens)
