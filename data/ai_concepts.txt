@@ -1,0 +1,182 @@
+ARTIFICIAL INTELLIGENCE: A COLLECTION OF CONNECTED AND DISTINCT CONCEPTS
+Dataset purpose: testing text-file ingestion, semantic chunking, hybrid retrieval, reranking, and source citations.
+
+1. Artificial Intelligence and Intelligent Systems
+
+Artificial Intelligence (AI) is the field of building computer systems that perform tasks commonly associated with human intelligence, including perception, reasoning, planning, learning, language understanding, and decision-making. An AI system does not need to imitate a human brain to be useful. It needs to map inputs to outputs in a way that meets a defined objective. A spam filter, a route planner, a speech assistant, and a robot that navigates a warehouse are all examples of AI applications, but they use different representations and algorithms.
+
+The phrase “AI system” describes a broad category rather than one particular model. Some systems use hand-written rules, some search through possible actions, some learn statistical patterns from examples, and others combine several techniques. A rule-based system may be easy to inspect but brittle when situations vary. A learned model may adapt to patterns in data but can also inherit biases or fail on unfamiliar inputs. Choosing an approach requires considering the task, available data, reliability requirements, cost, and consequences of errors.
+
+2. Machine Learning: Learning Patterns from Data
+
+Machine Learning (ML) is a branch of AI in which algorithms learn patterns from examples or experience rather than relying exclusively on explicitly written rules. In supervised learning, examples include input features and target labels. A model learns a mapping from features to targets, such as predicting a house price from its size, location, and age. In unsupervised learning, examples do not have target labels, and the objective may be to discover groups, summarize structure, or learn useful representations. Reinforcement learning focuses on an agent selecting actions and receiving rewards or penalties from an environment.
+
+A model’s training performance is not enough to demonstrate usefulness. The real goal is usually to perform well on new examples that were not used to fit the model. A common workflow separates data into training, validation, and test sets. The training set is used to learn parameters; the validation set helps choose configurations; and the test set provides a final evaluation. If the same test set is repeatedly used to make design decisions, it gradually becomes part of the development process and no longer provides an independent final estimate.
+
+3. Deep Learning and Neural Networks
+
+Deep learning is a subset of machine learning that uses neural networks with multiple layers. These layers learn intermediate representations that can transform raw inputs into features useful for prediction. For example, an image model may learn simple visual patterns in early layers and combine them into more complex shapes in later layers. Deep learning has been particularly influential in image recognition, speech processing, natural language processing, and generative AI.
+
+A neural network contains trainable weights and biases. During a forward pass, input values are transformed layer by layer to produce a prediction. A loss function measures how the prediction differs from the desired target. Backpropagation calculates gradients that describe how changes to parameters affect the loss, and an optimizer uses those gradients to update the parameters. These steps are repeated over many batches of examples. More layers and parameters can increase representational capacity, but they also increase computational demands and do not guarantee better generalization.
+
+4. Natural Language Processing
+
+Natural Language Processing (NLP) studies how computers process, analyze, and generate human language. NLP tasks include text classification, sentiment analysis, named-entity recognition, translation, summarization, information extraction, and question answering. Traditional approaches often used manually designed linguistic features and word-count representations. Modern systems frequently use neural networks and transformer architectures that learn contextual representations from large text collections.
+
+Language is ambiguous. The word “bank” can refer to a financial institution or the side of a river, and the correct interpretation depends on context. A strong language system must therefore consider surrounding words, the user’s intent, and the task being performed. Even advanced language models can generate plausible but incorrect statements, so important applications should use suitable verification, retrieval, or human review rather than treating fluent wording as proof of accuracy.
+
+5. Large Language Models
+
+Large Language Models (LLMs) are neural networks trained on large collections of text and, in some cases, other modalities. Many modern LLMs use transformer architectures and are trained to predict tokens or solve related self-supervised objectives. After pretraining, a model may undergo instruction tuning or other post-training processes that improve its ability to follow requests, format answers, use tools, or respond according to specified preferences.
+
+An LLM can summarize a report, explain code, draft an email, or answer questions, but its output is generated from learned patterns and the information supplied at inference time. Its parameters do not automatically contain every current fact or every private document an organization owns. When a task requires current, specialized, or organization-specific information, an application can retrieve relevant evidence and provide it as context. This is one motivation for Retrieval-Augmented Generation.
+
+6. Retrieval-Augmented Generation
+
+Retrieval-Augmented Generation (RAG) combines an information-retrieval stage with a language-generation stage. Instead of asking a language model to answer from its parameters alone, the system searches a collection of documents for passages relevant to the user’s question. The selected passages are placed into a prompt alongside the question, and the language model generates an answer using that supplied context. A RAG pipeline commonly includes document ingestion, parsing, chunking, embedding, indexing, retrieval, optional reranking, context construction, generation, and source attribution.
+
+RAG is useful when the knowledge source changes more frequently than a model can be retrained, when an application must answer from private documents, or when users need to inspect the evidence behind an answer. It does not automatically guarantee factual correctness. If retrieval finds the wrong passages, if important evidence is omitted, or if the model ignores the supplied context, the final answer may still be wrong. Evaluating retrieval and generation separately helps identify where failures occur.
+
+7. Document Chunking and Semantic Boundaries
+
+Document chunking divides a large source into smaller units that can be indexed and retrieved independently. Very large chunks may contain several unrelated ideas, making retrieval imprecise and consuming more of the model’s context window. Very small chunks can remove necessary background, split a definition from its explanation, or separate a table from the paragraphs that explain it. Chunk size is therefore a design trade-off involving retrieval precision, context completeness, and computational cost.
+
+A recursive character splitter typically attempts to divide text using a hierarchy of separators, such as paragraph breaks, line breaks, spaces, and finally individual characters when necessary. Semantic chunking instead uses semantic similarity between neighboring text segments to estimate where a meaningful topic shift occurs. Semantic chunking can produce more coherent passages, but it is not perfect: related ideas can be split, and different concepts can remain grouped together. Tables need special care because a split between rows or columns can destroy the relationship between values and their headings.
+
+8. Embeddings and Vector Similarity
+
+An embedding is a numerical vector representing an item such as a sentence, paragraph, image, or other data. Embedding models are trained so that useful relationships in the source data are reflected in vector space. In semantic retrieval, the system embeds the user’s query and compares it with stored document vectors. Similarity measures such as cosine similarity can help identify passages whose meanings are related even when they do not share exactly the same words.
+
+Semantic similarity is not identical to factual relevance. Two passages may discuss the same broad topic but answer different questions. For example, a passage describing how to train a classifier and a passage describing how to deploy it may have similar embeddings because both discuss machine learning, yet only one may answer a query about deployment. This is why retrieval systems often combine vector similarity with other ranking signals or apply a reranker to the initial candidates.
+
+9. Keyword Retrieval and BM25
+
+Keyword retrieval finds documents based on the terms present in a query. BM25 is a widely used ranking function that estimates how relevant a document is to a query using signals such as term frequency, inverse document frequency, and document length normalization. A term appearing repeatedly in a document can contribute to relevance, but its contribution is generally subject to diminishing returns. Rare terms can be especially informative because they distinguish a smaller number of documents from the broader collection.
+
+BM25 is useful for technical identifiers, exact product names, acronyms, error messages, version numbers, and rare phrases. It can struggle when the user describes a concept using different wording from the document. Semantic search can help with paraphrases but may miss an exact identifier. Hybrid retrieval combines keyword and semantic retrieval so that the system can benefit from both forms of evidence. The two candidate lists must then be combined using an explicit fusion strategy.
+
+10. Hybrid Retrieval and Rank Fusion
+
+Hybrid retrieval runs more than one retrieval method for the same query, commonly keyword search and semantic vector search. Each method returns candidate documents with its own scores or ranking. These outputs are not automatically comparable: a BM25 score and a cosine-similarity score come from different calculations and may have very different numerical ranges. Adding the raw scores without considering their scales can cause one retriever to dominate for reasons unrelated to actual relevance.
+
+Weighted score fusion attempts to combine compatible or normalized scores using chosen weights. The weights determine how much influence each retrieval signal has, and they should be selected through experiments on representative queries and relevance judgments rather than guessed from one example. Reciprocal Rank Fusion (RRF) combines ranks instead of raw scores. It gives each document a contribution based on its position in each result list, often making it a convenient baseline when score scales differ. Neither method can guarantee the correct ranking in every case, so evaluation remains important.
+
+11. Cross-Encoder Reranking
+
+A cross-encoder reranker receives a query and a candidate passage together and predicts a relevance score for that pair. Unlike a typical bi-encoder retrieval system, which embeds the query and document separately, a cross-encoder can directly model interactions between the words and context of the query and passage. This often improves ordering among a small set of candidates, especially when several passages share vocabulary but differ in how well they answer the question.
+
+Cross-encoders are usually more expensive to apply to an entire large collection, because each query-passage pair must be processed. A common architecture first retrieves a manageable candidate set using BM25, vector search, or hybrid fusion, then reranks those candidates, and finally sends the highest-ranked passages to the generator. A reranker cannot recover a relevant passage that the initial retrieval stage never returned. It also cannot guarantee correctness; it estimates relevance, and its quality depends on the model, data, and query domain.
+
+12. Metadata and Source Attribution
+
+Metadata is structured information stored alongside a document or chunk. It may include a source filename, page number, document identifier, creation date, content type, or access-control information. Metadata filtering can narrow retrieval to a particular source, time period, document category, or authorized subset before or during the search. It is distinct from the actual text content, although both can contribute to the retrieval workflow.
+
+Source attribution, often presented as citations, tells users which retrieved sources support an answer. A filename-only citation is useful for identifying the general source, but page numbers or chunk references can make verification easier when available. Citations do not themselves prove that an answer is correct: the cited passage must actually support the claim. A robust system should avoid attaching a source merely because it was retrieved if it does not substantiate the generated statement.
+
+13. Vector Databases and Qdrant
+
+A vector database stores vector representations and supports similarity search over them. Qdrant is a vector database that stores points containing vectors and optional payloads. A payload is a structured set of fields associated with a point, often including the chunk text, source filename, page number, or other metadata. When a query arrives, the application creates a query vector and asks Qdrant to find nearby stored vectors according to the configured distance metric.
+
+Vector storage is only one part of a RAG system. The application must still parse source files, create meaningful chunks, generate embeddings with a compatible model, store useful payload fields, retrieve candidates, build context, and generate the response. If the embedding model changes, stored vectors and query vectors may no longer be compatible in meaning or dimensionality. A collection should therefore have a clear embedding-model and vector-configuration policy.
+
+14. Tokenization and Model Context Windows
+
+Tokenization converts text into the units a language model processes. A token may be a complete word, part of a word, punctuation, or another unit defined by the tokenizer. Tokens are not the same as semantic chunks: tokenization prepares text for a model, while chunking divides a document into retrieval-sized passages. A long word may be represented by several subword tokens, and a short-looking sentence can use more tokens than expected depending on the vocabulary and language.
+
+A model’s context window limits how many input and output tokens it can handle in one request. In RAG, the context must leave room for instructions, the user’s question, retrieved passages, and the generated answer. Sending every retrieved document can waste tokens and bury relevant evidence in irrelevant content. Systems can control context size by limiting the number of passages, selecting shorter passages, removing repeated information, or compressing retrieved context while preserving details needed to answer the question.
+
+15. Context Compression
+
+Context compression reduces the amount of retrieved text supplied to the language model while attempting to preserve information relevant to the query. A simple approach removes clearly irrelevant passages; a more advanced approach extracts query-relevant sentences or uses a model to summarize candidate evidence. Compression can reduce latency and token usage, but aggressive compression may remove qualifications, numbers, exceptions, or relationships that are essential to a correct answer.
+
+Consider a question asking for the learning rate used in an experiment. A long passage may describe the research background, model architecture, dataset, training process, and final metrics. The learning-rate value may be only one sentence. Compression can prioritize that sentence, but it must preserve enough context to avoid confusing the learning rate with a batch size or another parameter. Compressed evidence should remain traceable to the original source when citations are required.
+
+16. Hallucination and Grounded Generation
+
+In generative AI, a hallucination is an output that presents unsupported or incorrect information as though it were true. Hallucinations can occur because a model generates plausible continuations rather than performing a guaranteed fact-check of every claim. In a RAG system, hallucinations may arise from missing evidence, poor retrieval, ambiguous passages, misleading instructions, or the model adding details that are not present in the retrieved context.
+
+Grounded generation attempts to tie answers to supplied evidence. The prompt can instruct the model to use the retrieved passages and acknowledge when the answer is not supported. The system can display citations, test claims against retrieved evidence, or use a separate verification step. These measures reduce certain failure modes but do not eliminate hallucinations completely. A system should be evaluated with realistic questions, including questions whose answers are absent from the collection.
+
+17. RAG Evaluation
+
+RAG evaluation should examine both retrieval quality and answer quality. Retrieval evaluation asks whether the system found the relevant passages and ranked them usefully. Generation evaluation asks whether the answer is correct, relevant, complete, and supported by the retrieved context. A system can generate a well-written answer from irrelevant passages using prior model knowledge, or retrieve the right passages while generating an inaccurate answer. Treating these as separate stages makes debugging more precise.
+
+Common retrieval metrics include Recall@k, which measures whether relevant items appear in the top k results, and ranking metrics such as Mean Reciprocal Rank or Normalized Discounted Cumulative Gain. Generation-oriented evaluation may examine faithfulness to context, answer relevance, and correctness against a reference answer. RAGAS and DeepEval provide tools for evaluating aspects of RAG pipelines, but their results depend on the chosen metrics, reference data, judge models, and evaluation setup. Human review remains valuable for high-impact or ambiguous cases.
+
+18. Observability for AI Applications
+
+Observability helps developers understand what happened inside an application during a request. For a RAG pipeline, useful traces may show the incoming query, retriever timings, candidate identifiers, fusion rankings, reranker scores, context sent to the model, token usage, latency, and errors. This makes it easier to determine whether a poor answer came from retrieval, prompt construction, model generation, or a downstream failure.
+
+LangSmith and Langfuse are examples of tools used to trace and monitor language-model applications. Depending on configuration, they can help inspect execution traces, compare prompt or model versions, collect feedback, and organize evaluations. Observability is not the same as evaluation: a trace helps explain what happened in one execution, while evaluation measures quality against criteria across a collection of test cases. Both are useful, and sensitive content should be handled according to privacy and retention requirements.
+
+19. AI Agents and Tool Use
+
+An AI agent is a system that uses a model to choose actions toward a goal, often by calling tools, observing results, and deciding what to do next. Tools might include a search engine, a calculator, a database query, a code interpreter, or an application API. A simple chatbot generally receives a message and generates a response, while an agent may execute a sequence of steps depending on intermediate results.
+
+Agentic systems introduce additional challenges: the model may choose an unsuitable tool, provide malformed arguments, repeat actions, or misinterpret a tool result. Reliable agents need clear tool definitions, input validation, permission boundaries, timeouts, error handling, and limits on how many actions they may take. For consequential operations, confirmation and human oversight may be necessary. More autonomy is not automatically better; a deterministic workflow is often preferable when the steps are known in advance.
+
+20. Computer Vision
+
+Computer Vision is the field of enabling computers to interpret visual data such as images and video. Tasks include image classification, object detection, segmentation, tracking, and optical character recognition. Classification assigns a label to an entire image, object detection identifies objects and their bounding boxes, and segmentation assigns labels to individual pixels or regions. These tasks have different output formats and evaluation requirements.
+
+Computer-vision systems can fail when lighting, camera angle, background, image quality, or object appearance differs from training data. Dataset construction should include realistic variations, and evaluation should avoid leakage between near-duplicate images. For object detection, metrics often account for both classification and localization quality. A high image-classification accuracy score does not establish that a detector can accurately locate small objects or rare defects.
+
+21. Reinforcement Learning
+
+Reinforcement Learning (RL) studies how an agent learns to select actions through interaction with an environment. The agent observes a state, takes an action, and receives a reward and a new state. Its objective is usually to maximize cumulative reward over time, which means that an action with an immediate cost may still be useful if it leads to better future outcomes. RL is used in areas such as robotics, game-playing, resource allocation, and control.
+
+Designing the reward function is difficult. If the reward captures the goal poorly, an agent may discover a shortcut that maximizes the measured reward while violating the intended objective. This is often described as reward hacking. RL experiments also face challenges involving exploration, sample efficiency, safety, and the difference between simulated and real environments. A successful simulation result does not guarantee reliable behavior in the physical world.
+
+22. Data Engineering and Data Quality
+
+Data engineering concerns the collection, transformation, validation, storage, and delivery of data for applications and analytics. In an ML workflow, data quality problems can be more damaging than a choice between two sophisticated algorithms. Missing values, inconsistent units, duplicate records, incorrect labels, and changing schemas can all distort training or inference. A reproducible pipeline records how raw data is transformed and checks whether incoming data meets expected constraints.
+
+Data validation rules should reflect the meaning of each field. For example, a temperature field might need a numeric type and a plausible range, while an identifier should not be averaged as though it were a measurement. Training and inference pipelines should apply compatible transformations. Data lineage—knowing where a value originated and how it was transformed—helps debug unexpected model behavior and supports audits.
+
+23. SQL and Relational Databases
+
+SQL is a language for querying and modifying data stored in relational database systems. A relational database organizes information into tables with rows and columns, and relationships can be expressed through keys. SELECT queries retrieve data, WHERE filters rows, JOIN combines related tables, GROUP BY aggregates records, and ORDER BY sorts results. Constraints and transactions help preserve data integrity.
+
+Relational databases and vector databases solve different primary problems, although a single application may use both. A relational database is well suited to structured records, transactions, constraints, and exact filtering. A vector database specializes in similarity search over embeddings. A RAG application may keep business records in PostgreSQL and document embeddings in Qdrant, using identifiers and metadata to connect the two systems when necessary.
+
+24. Docker and Reproducible Environments
+
+Docker packages an application and its dependencies into a container image that can run in a consistent environment. Containers are useful for databases, API services, background workers, and supporting infrastructure. A Docker image is a template; a container is a running instance of that image. Port mappings expose selected container services to the host, and volumes can preserve data beyond the lifecycle of an individual container.
+
+Containers do not remove the need to understand configuration, networking, storage, or security. A database container may be running while the application still cannot connect because the hostname, port, credentials, or network are incorrect. Persistent volumes are important when data must survive container recreation. Secrets should not be embedded casually in images, and production deployments should use appropriate access controls and update procedures.
+
+25. Cybersecurity and Access Control
+
+Cybersecurity protects systems, data, and users against unauthorized access, disruption, and misuse. Common principles include least privilege, secure authentication, input validation, encryption where appropriate, patching, logging, and careful handling of secrets. An application should grant each component only the permissions it needs. For example, a document-search service may need read access to a collection but should not automatically receive permission to delete every collection in the database.
+
+AI applications face additional risks, including prompt injection, sensitive-data exposure, unsafe tool calls, and retrieval of documents the user is not authorized to see. Retrieved text should be treated as data rather than trusted instructions. Access-control filters should be enforced by the application or data layer, not merely requested in a prompt. Monitoring and testing should include attempts to bypass restrictions as well as ordinary successful workflows.
+
+26. Internet of Things and Edge Computing
+
+The Internet of Things (IoT) connects physical devices such as sensors, industrial equipment, vehicles, and home appliances to networks and software systems. Devices may collect measurements, send alerts, or receive control instructions. Edge computing processes data near the device rather than sending every raw observation to a distant server. This can reduce latency and bandwidth use and may help keep sensitive data local.
+
+Edge systems have constrained memory, power, and compute resources, so models may need compression, quantization, or smaller architectures. Connectivity may be intermittent, which makes local buffering and graceful failure important. A deployed model should be evaluated on the actual device and under realistic operating conditions. A model that performs well on a powerful development machine may be too slow or memory-intensive for a low-power sensor gateway.
+
+27. Cloud Computing and Distributed Systems
+
+Cloud computing provides computing resources such as virtual machines, storage, managed databases, and application services over a network. It allows teams to scale resources and deploy services without maintaining every physical server themselves. Distributed systems divide work across multiple processes or machines, which can improve capacity and resilience but introduces challenges involving communication, partial failures, consistency, and coordination.
+
+A RAG application may run a frontend, API backend, vector database, and model server as separate services. Each service has its own resource limits and failure modes. If the model server is slow, the API should handle timeouts and avoid unlimited concurrent requests. If the vector database is unavailable, the application should return a clear error rather than an unexplained failure. Health checks, logs, metrics, and sensible retry policies help operate these systems reliably.
+
+28. Statistical Thinking and Experimental Design
+
+Statistics provides methods for describing data, estimating uncertainty, testing hypotheses, and comparing outcomes. An observed difference between two model configurations may reflect a genuine improvement, random variation, or a change in the evaluation sample. Repeating experiments, keeping evaluation data fixed, and reporting uncertainty can help distinguish these possibilities. Statistical significance alone does not establish practical importance; the magnitude and consequences of the difference also matter.
+
+An experiment should begin with a clear question. For example, a RAG developer might ask whether hybrid retrieval improves Recall@5 over semantic retrieval alone. The developer can create a set of queries with labeled relevant passages, run both systems using the same corpus, calculate the metric for each query, and compare results. This provides stronger evidence than testing a few hand-picked questions and deciding based on subjective impressions.
+
+29. Software Testing and API Reliability
+
+Software testing checks whether a component behaves according to its contract. Unit tests target small functions, integration tests check interactions between components, and end-to-end tests exercise a complete user workflow. For a RAG application, unit tests might verify score fusion or metadata parsing; integration tests might check that retrieval returns valid payloads; and end-to-end tests might submit a query and verify that an answer and citations are returned.
+
+Reliable APIs validate inputs, use appropriate status codes, handle expected failures, and avoid exposing sensitive internal details in error messages. Timeouts prevent a request from waiting indefinitely for a downstream service. Retries should be used carefully because repeating a costly or non-idempotent operation can create additional problems. Observability and tests complement each other: tests catch known classes of failures, while traces and logs help investigate failures that occur in practice.
+
+30. Responsible AI and Human Oversight
+
+Responsible AI involves designing, evaluating, and operating AI systems with attention to reliability, privacy, fairness, transparency, security, and their effects on people. The appropriate safeguards depend on the application. A system that suggests music has different consequences from a system used in medical care, hiring, lending, or industrial safety. Higher-impact applications generally require stronger validation, documented limitations, meaningful human oversight, and clear processes for handling errors.
+
+Human oversight should be practical rather than ceremonial. Reviewers need enough information and authority to question a recommendation, inspect supporting evidence, and override an automated result. Systems should communicate uncertainty where possible and avoid presenting estimates as guaranteed facts. Responsible deployment is an ongoing process involving data governance, monitoring, feedback, incident response, and periodic reassessment as the environment changes.
