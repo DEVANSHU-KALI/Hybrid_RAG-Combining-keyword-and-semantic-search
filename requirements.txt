@@ -3,27 +3,54 @@ sentence-transformers
 langchain
 langchain-community
 langchain-experimental
+langchain-huggingface
+langchain-openai
 rank-bm25
 streamlit
+fastapi
+uvicorn
 pydantic
 python-dotenv
 numpy
 openai
 tqdm
 aiohttp
+httpx
+datasets
+ragas
+pandas
+openpyxl
+langsmith
+pdfplumber
+pypdf
+locust
 
+# | Library                  | Purpose                                         |
+# | ------------------------ | ----------------------------------------------- |
+# | `qdrant-client`          | Connect to Qdrant Vector Database               |
+# | `sentence-transformers`  | Local embedding/reranking model loading         |
+# | `langchain`              | Core orchestrations and chunking utilities     |
+# | `langchain-community`    | Integrations for embeddings and stores          |
+# | `langchain-experimental` | Experimental components (Semantic Chunker)      |
+# | `langchain-huggingface`  | HuggingFace embedding wrappers                 |
+# | `langchain-openai`       | OpenAI compatibility API wrapper for evaluation |
+# | `rank-bm25`              | Sparse keyword matching (Okapi BM25)            |
+# | `streamlit`              | Graphical web interface dashboard               |
+# | `fastapi`                | Backend web REST API server                     |
+# | `uvicorn`                | ASGI server to run FastAPI                      |
+# | `pydantic`               | Strict type hints and payload validations       |
+# | `python-dotenv`          | Load local .env configurations                  |
+# | `numpy`                  | Numerical operations during score scaling        |
+# | `openai`                 | AsyncOpenAI library client for local LLM        |
+# | `tqdm`                   | Progress indicators during bulk processes        |
+# | `aiohttp`                | Asynchronous HTTP requests                      |
+# | `httpx`                  | Async HTTP requests client for frontend         |
+# | `datasets`               | Hugging Face tabular dataset format for Ragas    |
+# | `ragas`                  | Evaluation metric checker framework             |
+# | `pandas`                 | Tabular dataframe handling                      |
+# | `openpyxl`               | Writing pandas dataframes to Excel files        |
+# | `langsmith`              | Execution trace logging and observability       |
+# | `pdfplumber`              | PDF layout parsing and Markdown table extraction|
+# | `pypdf`                   | Fallback PDF text extraction engine             |
+# | `locust`                  | Concurrency and load testing benchmark tool     |
 
-# | Library                  | Purpose               |
-# | ------------------------ | --------------------- |
-# | `qdrant-client`          | connect to Qdrant     |
-# | `sentence-transformers`  | embeddings            |
-# | `langchain`              | chunking utilities    |
-# | `langchain-experimental` | semantic chunker      |
-# | `rank-bm25`              | keyword retrieval     |
-# | `streamlit`              | frontend              |
-# | `pydantic`               | data validation       |
-# | `python-dotenv`          | environment variables |
-# | `numpy`                  | score operations      |
-# | `openai`                 | GPT-4o-mini           |
-# | `aiohttp`                | async HTTP            |
-# | `tqdm`                   | progress bars         |
