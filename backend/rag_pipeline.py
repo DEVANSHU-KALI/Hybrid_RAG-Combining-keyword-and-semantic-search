@@ -51,6 +51,32 @@ def calculate_query_cost(model_name: str, prompt_tokens: int, completion_tokens:
     return round(cost, 6)
 
 
+# CONCEPT: Structured Enterprise RAG Prompt Template
+def build_rag_prompt(context: str, query: str) -> str:
+    """
+    Constructs an enterprise-grade grounded system prompt:
+    1. Enforces strict zero-hallucination grounding from context.
+    2. Defaults to comprehensive, complete synthesis of all retrieved passages.
+    3. Mandates Markdown table formatting when tabular comparisons exist in context.
+    4. Dynamically respects user formatting/length directives (e.g. 'summarize', 'bullet points').
+    """
+    return f"""You are a professional enterprise AI assistant.
+Answer ONLY from the provided context. If the answer is not present in the context, say: "I could not find the answer in the provided documents."
+
+Guidelines:
+1. Grounding: Rely strictly on facts stated directly in the context. Do not invent, extrapolate, or assume facts not present.
+2. Comprehensive Synthesis: By default, provide a thorough, complete, and well-explained response by connecting and synthesizing all relevant points from the context passages into a cohesive narrative. Do not overly condense or summarize unless requested.
+3. Tables & Structured Data: If the context contains comparison tables, parameters, or structured categories, preserve and render them as clean Markdown tables.
+4. User Directives & Constraints: If the user explicitly asks for a specific format or length (e.g., "summarize", "be brief", "shorten", "bullet points only"), strictly prioritize and follow that directive.
+
+Context:
+{context}
+
+Question:
+{query}
+"""
+
+
 # CONCEPT: Server-Sent Events (SSE) Streaming Async Generator
 # Production systems yield tokens real-time using SSE (Server-Sent Events) rather than 
 # waiting 4-6 seconds for full answer completion. This reduces Time-To-First-Token (TTFT) 
@@ -74,15 +100,7 @@ async def stream_rag_answer(query: str,
     context = "\n\n".join([chunk["text"] for chunk in reranked_chunks])
     citations = list(set([chunk["source"] for chunk in reranked_chunks]))
 
-    prompt = f"""You are a helpful enterprise AI assistant.
-Answer ONLY from the provided context. If the answer is not present, say: "I could not find the answer in the provided documents."
-
-Context:
-{context}
-
-Question:
-{query}
-"""
+    prompt = build_rag_prompt(context, query)
 
     # Yield Metadata Event First (Citations, Contexts & Chunk IDs)
     metadata_event = {
@@ -150,9 +168,11 @@ async def generate_answer(query: str, tenant_id: str = "tenant_default", user_id
     context = "\n\n".join([c["text"] for c in reranked])
     citations = list(set([c["source"] for c in reranked]))
 
+    prompt = build_rag_prompt(context, query)
+
     response = await llm_client.chat.completions.create(
         model=DEFAULT_MODEL,
-        messages=[{"role": "user", "content": f"Context:\n{context}\n\nQuestion: {query}"}]
+        messages=[{"role": "user", "content": prompt}]
     )
 
     answer = response.choices[0].message.content
