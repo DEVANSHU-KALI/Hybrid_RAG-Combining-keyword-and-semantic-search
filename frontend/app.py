@@ -239,7 +239,15 @@ for msg in active_messages:
                         m2.metric("Total Time", f"{telemetry.get('total_latency_sec', 0)} s")
                         
                         m3, m4 = st.columns(2)
-                        m3.metric("Tokens", f"{telemetry.get('total_tokens', 0)}")
+                        total_tok = telemetry.get("total_tokens", 0)
+                        q_tok = telemetry.get("prompt_tokens", 0)
+                        r_tok = telemetry.get("completion_tokens", 0)
+                        m3.metric(
+                            "Tokens", 
+                            f"{total_tok}", 
+                            delta=f"Q: {q_tok} | R: {r_tok}", 
+                            delta_color="off"
+                        )
                         m4.metric("Cost (USD)", f"${telemetry.get('estimated_cost_usd', 0.0):.6f}")
                         st.caption(f"Engine: `{telemetry.get('model_used', 'N/A')}`")
 
