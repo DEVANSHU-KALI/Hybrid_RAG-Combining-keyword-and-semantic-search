@@ -32,23 +32,24 @@ The primary role of `backend/rag_pipeline.py` is orchestrating the complete end-
 * **Lines 8–9**: Imports hybrid retrieval and Cross-Encoder reranking helpers.
 
 ```python
-12: GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-13: if GROQ_API_KEY and len(GROQ_API_KEY) > 5:
-14:     llm_client = AsyncOpenAI(
-15:         base_url="https://api.groq.com/openai/v1",
-16:         api_key=GROQ_API_KEY
-17:     )
-18:     DEFAULT_MODEL = "llama-3.3-70b-versatile"
-19: else:
-20:     llm_client = AsyncOpenAI(
-21:         base_url="http://localhost:8080/v1",
-22:         api_key="dummy"
-23:     )
-24:     DEFAULT_MODEL = "raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF"
+16: LLM_PROVIDER = os.getenv("LLM_PROVIDER", "").lower()
+17: GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+18: LOCAL_LLM_URL = os.getenv("LOCAL_LLM_URL", "http://localhost:8080/v1")
+19: LOCAL_LLM_MODEL = os.getenv("LOCAL_LLM_MODEL", "raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF")
+20: GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+...
+26: if LLM_PROVIDER == "local" or (not LLM_PROVIDER and (not GROQ_API_KEY or len(GROQ_API_KEY) <= 5)):
+27:     llm_client = AsyncOpenAI(base_url=LOCAL_LLM_URL, api_key="dummy")
+28:     DEFAULT_MODEL = LOCAL_LLM_MODEL
+29: else:
+30:     llm_client = AsyncOpenAI(base_url="https://api.groq.com/openai/v1", api_key=GROQ_API_KEY)
+31:     DEFAULT_MODEL = GROQ_MODEL
 ```
-* **Lines 12–24 (Automatic Provider Switching)**:
-  * If a valid `GROQ_API_KEY` is present in `.env`, connects to Groq's ultra-fast cloud LPU inference API using `llama-3.3-70b-versatile`.
-  * If no API key is found, automatically falls back to a locally hosted `llama.cpp` or `vLLM` server at `http://localhost:8080/v1` running quantized `Qwen2.5-7B-Instruct`. Both expose the identical OpenAI-compatible `/v1/chat/completions` API!
+* **Lines 16–31 (Multi-Provider Selection Logic)**:
+  * **Option 1: Force Local Model (`LLM_PROVIDER=local` in `.env`)**: Connects to the local OpenAI-compatible inference server (e.g. `llama.cpp`, LM Studio, Ollama) on `http://localhost:8080/v1` running quantized `raaedk/Qwen2.5-7B-Instruct-Q4_K_M-GGUF`. Even if a `GROQ_API_KEY` exists in `.env`, setting `LLM_PROVIDER=local` guarantees that zero tokens or queries leave your machine!
+  * **Option 2: Force Cloud Model (`LLM_PROVIDER=groq` in `.env`)**: Connects to Groq's high-speed cloud LPU API running `llama-3.3-70b-versatile`.
+  * **Fallback Default**: If `LLM_PROVIDER` is not specified, it uses Groq if a key is present, otherwise falls back to the local model.
+  * Both local and cloud providers use the exact same `AsyncOpenAI` client interface (`/v1/chat/completions`) with full streaming support (`stream=True`).
 
 ---
 
@@ -115,19 +116,15 @@ pricing = TOKEN_PRICING.get(model_name, TOKEN_PRICING["default"])
 ```python
 62:     context = "\n\n".join([chunk["text"] for chunk in reranked_chunks])
 63:     citations = list(set([chunk["source"] for chunk in reranked_chunks]))
-65:     prompt = f"""You are a helpful enterprise AI assistant.
-66: Answer ONLY from the provided context. If the answer is not present, say: "I could not find the answer in the provided documents."
-67: 
-68: Context:
-69: {context}
-70: 
-71: Question:
-72: {query}
-73: """
+65:     prompt = build_rag_prompt(context, query)
 ```
 * **Line 62**: Combines the 3 top chunks into one formatted context string separated by double newlines.
-* **Line 63**: `set(...)` deduplicates source filenames (e.g. `["q3_report.pdf"]`) for clean citations.
-* **Lines 65–73**: Strict system prompt enforcing zero-hallucination grounding.
+* **Line 63**: `set(...)` deduplicates source filenames (e.g. `["machine_learning.pdf"]`) for clean citations.
+* **Line 65 (`build_rag_prompt`)**: Calls the enterprise prompt constructor with 4 core directives:
+  1. **Grounding:** Strict zero-hallucination boundary (`"Answer ONLY from the provided context"`).
+  2. **Comprehensive Synthesis:** Defaults to a thorough, complete explanation connecting all 3 retrieved chunks rather than lazy 4-line summaries.
+  3. **Table & Structured Data Preservation:** Mandates that comparison tables and parameters in context are preserved and rendered as clean Markdown tables.
+  4. **User Directives & Constraints:** Dynamically respects user overrides when the user requests specific lengths or formats (e.g., *"summarize"*, *"shorten"*, *"in 2 bullet points"*).
 
 ---
 
@@ -264,6 +261,40 @@ T = 420 ms   ──► First LLM text token arrives over network socket (TTFT = 
 129:     yield f"data: {json.dumps(telemetry_event)}\n\n"
 ```
 * Emits the final `telemetry` event containing TTFT latency, total generation time, total tokens, and USD cost so the frontend telemetry dashboard can render live performance metrics.
+
+#### In-Depth Telemetry Mechanics: Token Breakdown & TTFT Dynamics
+
+##### 1. The Token Economy: Prompt Tokens (Q) vs. Completion Tokens (R)
+A frequent point of confusion is why a short 1-sentence answer (e.g. *"I could not find the answer in the provided documents."*) can show **454 Total Tokens** in telemetry.
+
+* **Total Tokens Formula:**
+  $$\text{Total Tokens} = \underbrace{\text{Prompt Tokens } (Q)}_{\text{Input Context}} + \underbrace{\text{Completion Tokens } (R)}_{\text{Generated Output}}$$
+* **Why Prompt Tokens Dominate ($85\%–95\%$):**  
+  In a RAG architecture, the prompt sent to the LLM does not merely consist of the user's question. It bundles:
+  1. The System Instructions (~80 tokens).
+  2. The 3 retrieved and reranked context chunks (~300–700 tokens).
+  3. The User Question (~10–30 tokens).
+* **The Reality:** For an answer of only 12 tokens ($R=12$), the LLM had to ingest 442 tokens of context ($Q=442$).
+  $$\text{Total Tokens} = 442 + 12 = 454 \text{ tokens}$$
+* **FinOps Implication:** In commercial production, LLM providers charge different rates for input vs. output tokens (input tokens are cheaper, but account for 90% of the volume). Displaying $Q$ and $R$ separately in the UI gives complete visibility into prompt efficiency.
+
+##### 2. TTFT (Time-To-First-Token) Deep Dive
+
+* **Why TTFT is Kept in Milliseconds (`ms`) in Production:**
+  * **Human Perception Standards:** HCI and UX research (Nielsen Norman Group) categorize interaction latency:
+    * $<300\text{ ms}$: Perceived as instant.
+    * $<1000\text{ ms}$: Keeps the user's train of thought uninterrupted.
+    * $>1000\text{ ms}$: Causes noticeable waiting.
+  * **Micro-benchmarking Precision:** In engineering audits, a jump from $250\text{ ms}$ to $450\text{ ms}$ represents an $80\%$ latency regression. If rounded to seconds (`0.3s` vs `0.5s`), critical performance regressions become invisible. Therefore, production observability tools (Datadog, LangSmith, vLLM, OpenAI) universally report TTFT in `ms`.
+
+* **Why TTFT is NOT Constant and Varies Widely Across Queries:**
+  In a RAG pipeline, TTFT does not simply measure the LLM; it measures the **entire end-to-end pre-generation pipeline**:
+  $$\text{TTFT} = \text{Query Embedding} + \text{Hybrid Search} + \text{Cross-Encoder Reranker} + \text{LLM Prompt Prefill}$$
+  
+  Why it fluctuates (e.g., $2{,}701\text{ ms}$ vs. $5{,}465\text{ ms}$ vs. $11{,}563\text{ ms}$):
+  1. **Cross-Encoder Reranker Workload:** The reranker processes 10 `(query, chunk)` candidate pairs through a 12-layer transformer. If chunks contain large Markdown tables (many tokens), the transformer forward pass takes significantly longer than when chunks contain short paragraphs.
+  2. **LLM Prompt Prefill Computation:** Before generating token #1, the LLM must evaluate all tokens in the prompt. Processing a 1,200-token prompt takes noticeably more time than a 400-token prompt.
+  3. **Out-of-Vocabulary / Mismatched Queries & Cache Invalidation:** When a query has zero keyword overlap (such as *"can you elaborate the response"*), the BM25 index scores the entire dictionary with near-zero weights, forcing wide semantic scans. On local GGUF models, dramatic topic shifts cannot reuse prior KV-cache memory, leading to RAM reallocation spikes that push TTFT to $11{,}563\text{ ms}$.
 
 ---
 

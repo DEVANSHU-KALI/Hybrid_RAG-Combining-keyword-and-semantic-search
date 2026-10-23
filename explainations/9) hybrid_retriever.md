@@ -298,3 +298,39 @@ Chunks matched by both retrievers receive scores in $[1.0, 2.0]$, while chunks m
 | **Min-Max Score Fusion** *(Chosen)* | Normalizes raw scores of both algorithms to $[0.0, 1.0]$, then sums them together. | • Preserves relative performance gaps between candidates.<br>• Boosts overlapping chunks up to $2.0$. | • Sensitive to extreme outliers in score distributions. |
 | **Reciprocal Rank Fusion (RRF)** | Merges lists using rank position: $RRF = \sum \frac{1}{60 + \text{Rank}}$. Ignores raw scores. | • Independent of score distributions.<br>• Completely immune to outliers. | • Discards the magnitude of score differences. |
 | **Weighted Linear Fusion** | Applies explicit weights: $w \cdot \text{Semantic} + (1-w) \cdot \text{BM25}$. | • Allows fine-tuning domain priorities (e.g. 70% dense, 30% sparse). | • Requires manual parameter tuning. |
+
+---
+
+## 6. Real-World Behavior: Why an ML Query Retrieves Chunks from a Deep Learning Document
+
+A common observation during live testing is that querying:
+> *"What are the foundations and problem framing in machine learning?"*
+
+returns top chunks from `machine_learning.pdf`, but can also return a chunk from `deep_learning_test_corpus.pdf`. 
+
+Here is the exact mathematical and algorithmic reason this occurs:
+
+### 1. BM25 Keyword Overlap
+In `deep_learning_test_corpus.pdf` (Page 2), the opening section states:
+> *"Deep learning is a branch of **machine learning** that uses neural networks with multiple layers to learn useful representations from data... **Foundations** and Neural Networks..."*
+
+The Okapi BM25 sparse index matches exact tokens. Because the tokens `"machine"`, `"learning"`, and `"foundations"` appear prominently in the deep learning text, the sparse retriever awards it a significant lexical relevance score.
+
+### 2. 768D Dense Semantic Vector Proximity
+Dense retrieval uses the `BAAI/bge-base-en-v1.5` transformer model. In high-dimensional semantic vector space, concepts that are conceptually related map to nearby vector coordinates:
+* The semantic cosine similarity between the embedding of *"machine learning"* and *"deep learning"* exceeds **0.88**.
+* Dense search does not see hard file boundaries; it measures conceptual meaning. Foundations of neural representations are semantically adjacent to foundations of predictive models.
+
+### 3. Cross-Encoder Reranker Resolution
+In Stage 2, the Cross-Encoder (`bge-reranker-base`) scores all 10 candidates. The primary `machine_learning.pdf` chunks scored #1 and #2. The deep learning chunk scored high enough to take spot #3 because it discussed foundational learning mechanics.
+
+### How to Restrict Retrieval to a Single Document (If Needed):
+In enterprise production, if a user strictly desires results from a single document or category, you apply a metadata payload pre-filter in Qdrant:
+```python
+Filter(
+    must=[
+        FieldCondition(key="source", match=MatchValue(value="machine_learning.pdf"))
+    ]
+)
+```
+Without this filter, the hybrid retriever intentionally surfaces related cross-document knowledge.

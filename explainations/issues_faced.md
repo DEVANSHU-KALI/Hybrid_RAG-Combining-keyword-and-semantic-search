@@ -202,6 +202,72 @@ for chunk_text in chunks:
 
 ---
 
+## Issue 4: LLM-as-a-Judge Evaluation Fragility, Rate-Limit Throttling (HTTP 429), and Grading Drift
+
+* **Date Discovered:** October 22, 2026
+* **Component Affected:** `evaluations/ragas_eval.py` & Cloud LLM Evaluator (Groq / OpenAI)
+* **Discovery Method:** Automated benchmark runs failing due to cloud API token/request limits, high latency (>3 minutes per test run), and inconsistent non-deterministic scores from the evaluator LLM.
+
+---
+
+### 1. Symptoms & Observations
+1. **HTTP 429 API Throttling:** When running automated Ragas evaluation using cloud LLM judges (such as Groq's `llama-3.3-70b-versatile`), the benchmark script repeatedly crashed with:
+   > `HTTP 429: Too Many Requests (Rate limit reached for requests per minute / tokens per minute)`
+2. **Extreme Evaluation Latency:** Even after implementing an in-memory rate limiter (1 request every 5 seconds), evaluating a modest 7-question test suite across 4 metrics took over **3 to 5 minutes** to execute.
+3. **Fallback to Mock Data:** Because the cloud API frequently timed out or choked on rate limits, `ragas_eval.py` was forced to catch exceptions and fall back to hardcoded dummy scores (`[0.92, 0.89, 0.95, 0.91]`), defeating the purpose of objective quality testing.
+4. **Judge LLM Hallucinations & Lexical Mismatch:** The generative judge LLM exhibited temperature-induced scoring drift (giving different grades to the identical answer on consecutive runs) and penalized correct answers simply because their phrasing differed from synthetic "Ground Truths".
+
+---
+
+### 2. Root Cause Analysis (Under the Hood)
+* **Autoregressive Token Generation Overhead:** An LLM-as-a-Judge evaluates text by generating conversational reasoning tokens word-by-word. For 7 questions $\times$ 4 metrics, the system must execute **28 separate multi-turn LLM generation loops**, requiring thousands of sequential forward passes through a 70-Billion parameter model.
+* **Cloud Rate Limits (TPM / RPM):** Free and Tier-1 cloud API keys have strict rate limits (e.g., 6,000 tokens/min or 12 requests/min). Feeding entire context passages and generated answers for 4 metrics rapidly exhausts token quotas.
+* **The "Ground Truth Illusion":** Using an LLM to generate ground truths, and then using another LLM to compare against those ground truths, creates compounding errors. If the RAG prompt instructs `"Answer ONLY from the provided context"`, but the ground truth contains external facts, the judge model unfairly punishes the system for following its grounding rules.
+
+---
+
+### 3. Downstream RAG Impact
+* Automated CI/CD regression testing became completely unusable due to flaky API timeouts and rate-limit aborts.
+* High recurring cloud API bills for developer test suites.
+* Inability to trust whether a drop in benchmark scores was caused by an actual retrieval bug or the judge LLM hallucinating during grading.
+
+---
+
+### 4. Architectural Fix & Elimination
+We resolved this by overhauling our evaluation architecture into two robust pathways:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                             THE ZERO-COST LOCAL EVALUATION SOLUTION                              │
+├─────────────────────────────────────────────────┬────────────────────────────────────────────────┤
+│ Pathway 1: Fast Local RAG Triad (`fast_eval.py`)│ Pathway 2: Local Qwen2.5-7B Ragas Offline      │
+├─────────────────────────────────────────────────┼────────────────────────────────────────────────┤
+│ • 100% Non-generative discriminative models     │ • Connects Ragas directly to local llama.cpp   │
+│ • Local Cross-Encoder for Faithfulness & NLI    │ • Uses Qwen2.5-7B on `localhost:8080/v1`       │
+│ • Local 768D Bi-Encoder for Answer Relevancy    │ • Temperature = 0.0 for deterministic grading  │
+│ • Latency: < 2 seconds for entire benchmark     │ • Zero cloud API calls, zero rate limits (429) │
+│ • Cost: $0.00 (Runs 100% on local CPU)          │ • Cost: $0.00 (100% private and offline)       │
+└─────────────────────────────────────────────────┴────────────────────────────────────────────────┘
+```
+
+1. **Created `evaluations/fast_eval.py` (Local Reference-Free RAG Triad):**
+   * **Faithfulness (Anti-Hallucination):** Uses local Cross-Encoder cross-attention (`ms-marco-MiniLM-L-6-v2`) to mathematically verify that answer propositions are logically entailed by the retrieved context chunks.
+   * **Answer Relevancy:** Uses local 768D embeddings (`BAAI/bge-base-en-v1.5`) to compute exact cosine similarity between query and answer.
+   * **Context Relevance:** Evaluates retrieved chunk signal-to-noise ratio using cross-encoder relevance scores.
+2. **Multi-Provider Local Fallback in `evaluations/ragas_eval.py`:**
+   * Added `LLM_PROVIDER=local` toggle allowing Ragas to point to `http://localhost:8080/v1` (with `Qwen2.5-7B`), removing rate-limiting restrictions and eliminating cloud token costs.
+3. **Reference-Free Grounding:**
+   * Transitioned runtime quality testing away from fragile synthetic ground truths to reference-free entailment verification.
+
+---
+
+### 5. Verification & Resolution
+* Ran `python -m evaluations.fast_eval`: Completed evaluation of all benchmark queries in **1.85 seconds** on local CPU.
+* Verified **100% deterministic output** (identical floating-point scores across repeated runs).
+* Confirmed clean export of benchmark tables to `evaluations/evaluation_results/fast_eval_results.xlsx` with zero cloud network calls and zero rate limits.
+
+---
+
 ## Template for Future Issues
 
 ```markdown

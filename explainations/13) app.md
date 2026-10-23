@@ -1,204 +1,293 @@
 # Script Explanation: `13) app.md`
 
 ## 1. Overview
-The primary role of the `app.py` script is to implement the **Graphical User Interface (GUI)** for our chatbot using the **Streamlit** framework. It provides a visual chat window that connects to our backend REST API, coordinates user query submissions, displays loading spinner indicators during pipeline computations, handles errors gracefully, and prints the generated responses along with their document source citations in a formatted layout.
+The primary role of `frontend/app.py` is serving as the **Enterprise Multi-Tenant User Interface** for our hybrid RAG system using the Streamlit framework. 
+
+We designed the application with a **Two-Screen Architecture with In-Memory Multi-Conversation Management**:
+1. **Screen 1: Enterprise Credentials & Authentication Gate**: Enforces multi-tenant scoping by capturing `tenant_id` and `user_id` before entering the application.
+2. **Screen 2: Enterprise ChatGPT-Style Workspace**: Features:
+   * **In-Memory Multi-Conversation Manager**: Maintains multiple separate chats in RAM (`chat_1`, `chat_2`, etc.) with dynamic auto-titling from the first user question and one-click sidebar switching.
+   * **Vertical Message Feed**: Native `st.chat_message("user")` and `st.chat_message("assistant")`.
+   * **Sticky Bottom Input**: Native `st.chat_input`.
+   * **Drag-and-Drop Document Indexing**: Indexes PDF tables and text into Qdrant under the active tenant and user.
+   * **Real-Time SSE Token Streaming**: Streams tokens with an animated cursor (`▌`).
+   * **Verification & FinOps Drawers**: Expandable accordions under each assistant response displaying verified citations, context chunks with `chunk_id` tags, and live metrics (TTFT in ms, latency, token counts, and cost in USD).
 
 ---
 
-## 2. Code Walkthrough
+## 2. System Architecture & UI Flow Diagram
 
-### Imports and Configuration
+```
+                     Browser Opens: http://localhost:8501
+                                      │
+                                      ▼
+                        Check Session Authentication
+                    st.session_state.authenticated == True?
+                    ├── No  ──► SCREEN 1: Enterprise Login Gate
+                    │           [ Tenant ID: tenant_default ]
+                    │           [ User ID:   usr_admin      ]
+                    │           [ 🚀 Enter Enterprise Workspace ]
+                    │                         │ (On Click)
+                    │                         ▼
+                    │           st.session_state.authenticated = True
+                    │           st.rerun()
+                    │                         │
+                    └── Yes ──► SCREEN 2: Main Workspace
+                                      │
+       ┌──────────────────────────────┴──────────────────────────────┐
+       ▼                                                             ▼
+  LEFT SIDEBAR                                                 MAIN CHAT FEED
+  • Active Identity: usr_admin @ tenant_default               • Scoped Workspace Header
+  • [➕ New Chat] / [🚪 Logout]                              • Active Chat: [Title]
+  • 💬 Conversations List:                                    • Vertical Message Feed
+    - 👉 What is Machine Learning...                            (Displays active chat's messages)
+    - 💬 Explain Deep Learning...                             • Sticky st.chat_input()
+  • Drag & Drop File Ingest (.pdf / .txt)                            │
+    (Runs asyncio.run(ingest_documents))                             ▼ (User types prompt)
+                                                              httpx.stream POST /chat/stream
+                                                                     │
+                                      ┌──────────────────────────────┼──────────────────────────────┐
+                                      ▼                              ▼                              ▼
+                               Metadata Event                   Token Event                  Telemetry Event
+                           (Citations & Chunk IDs)          (Streaming text ▌)             (TTFT, Cost, Latency)
+                                      │                              │                              │
+                                      └──────────────────────────────┼──────────────────────────────┘
+                                                                     ▼
+                                                      Render Assistant Chat Bubble
+                                                      + Expanders: [📚 Sources] [📊 FinOps]
+```
+
+---
+
+## 3. How Multi-Conversation Switching Works in Memory (Without a Database)
+
+### The In-Memory Session State Schema
+Even without an external PostgreSQL or SQLite database, Streamlit's `st.session_state` maintains isolated data structures in RAM for the lifetime of the active browser session:
+
 ```python
-import streamlit as st
-import httpx
-
-# Page Title
-st.title("Hybrid RAG Chatbot")
-
-# Backend API URL
-API_URL = "http://localhost:8000/chat"
+st.session_state.chats = {
+    "chat_1": {
+        "title": "What is Machine Learning...",
+        "messages": [
+            {"role": "user", "content": "What is Machine Learning?"},
+            {"role": "assistant", "content": "Backend offline (Preview Mode)"}
+        ]
+    },
+    "chat_2": {
+        "title": "Explain Deep Learning...",
+        "messages": [
+            {"role": "user", "content": "Explain Deep Learning and Neural Nets"},
+            {"role": "assistant", "content": "Backend offline (Preview Mode)"}
+        ]
+    }
+}
+st.session_state.current_chat_id = "chat_2"
 ```
-- **Lines 1–8**:
-  - We import `streamlit` (aliased as `st`) to build our UI controls and layouts in Python.
-  - We import `httpx`, a modern HTTP client library for Python, to handle REST API communications.
-  - We render the page heading using `st.title()`.
-  - We set our backend query target address to `"http://localhost:8000/chat"` (where our FastAPI server receives requests).
+
+### What Happens When You Switch Between Chats?
+1. **When in Chat 2 (DL):** The UI reads `st.session_state.chats["chat_2"]["messages"]` and renders your Deep Learning question and its response.
+2. **Clicking Chat 1 (ML) in Sidebar:**  
+   The button sets `st.session_state.current_chat_id = "chat_1"` and calls `st.rerun()`.
+3. **Instant Re-Render:**  
+   Because `current_chat_id` is now `"chat_1"`, the UI reads `st.session_state.chats["chat_1"]["messages"]`.  
+   **You see your exact Machine Learning question and its response, exactly as you left it!**
+4. **Zero Data Loss Across Switches:**  
+   Neither chat overwrites the other. Each conversation keeps its own private message list in memory.
+5. **Auto-Titling:**  
+   When a new chat starts, its title is `"New Chat"`. The moment you type your first question, the script extracts the first 26 characters and dynamically renames the chat title in the sidebar!
 
 ---
 
-### User Input and Spinner Integration
+## 4. Deep Line-by-Line Code Walkthrough
+
+---
+
+### Part A: Page Configuration & Multi-Chat Session State Setup (Lines 1–40)
+
 ```python
-# User Input
-query = st.text_input("Ask a question")
-
-# Query Processing
-if query:
-
-    # Loading Spinner
-    with st.spinner(
-        "Retrieving and generating answer..."
-    ):
+1: import json
+2: import os
+3: import asyncio
+4: import streamlit as st
+5: import httpx
 ```
-- **Lines 11–19**:
-  - We render a text entry box labeled `"Ask a question"` using `st.text_input()`. The user's input string is saved in `query`.
-  - `if query:` checks if the string is not empty. When a user writes a question and presses enter, this triggers the conditional block.
-  - We wrap our execution block inside `with st.spinner(...)`. This displays an animated loading indicator to show the user that their request is being processed.
+* Standard imports including `asyncio` for non-blocking document ingestion and `httpx` for SSE HTTP streaming.
 
----
-
-### API Request Submission
 ```python
-        try:
-            # Request Payload
-            payload = {"prompt": query}
-
-            # Send Async Request
-            response = httpx.post(
-                API_URL,
-                json=payload,
-                timeout=60.0
-            )
+18: if "authenticated" not in st.session_state:
+19:     st.session_state.authenticated = False
+20: if "tenant_id" not in st.session_state:
+21:     st.session_state.tenant_id = "tenant_default"
+22: if "user_id" not in st.session_state:
+23:     st.session_state.user_id = "usr_admin"
 ```
-- **Lines 21–31**:
-  - We start a **try-except** block to catch network and server faults.
-  - We package our prompt into a JSON payload dictionary: `{"prompt": query}`.
-  - We send an HTTP POST request using `httpx.post()`. We pass `json=payload` to serialize the dict to a JSON body.
-  - `timeout=60.0`: We set a 60-second limit. If the local language model is slow and doesn't respond within 60 seconds, the client aborts the request rather than hanging indefinitely.
+* Tracks login status and multi-tenant credentials.
 
----
-
-### Response Rendering
 ```python
-            # Successful Response
-            if response.status_code == 200:
-                data = response.json()
-
-                # Display Answer
-                st.subheader("Answer")
-                st.write(data["answer"])
-                st.subheader("Sources")
-
-                for source in data["citations"]:
-                    st.write(f"- {source}")
+28: if "chats" not in st.session_state:
+29:     st.session_state.chats = {
+30:         "chat_1": {
+31:             "title": "New Chat",
+32:             "messages": []
+33:         }
+34:     }
+35:     st.session_state.current_chat_id = "chat_1"
+36:     st.session_state.chat_counter = 1
 ```
-- **Lines 34–43**:
-  - We verify if the server returned successfully: `if response.status_code == 200`.
-  - We parse the JSON response body using `response.json()`.
-  - We render the heading `"Answer"` and print the generated text response using `st.write(data["answer"])`.
-  - We print the heading `"Sources"` and loop through `data["citations"]` to list the referenced filenames as bullet points on the screen.
+* **Lines 28–36 (Multi-Chat In-Memory Manager)**:
+  * Initializes the `chats` dictionary mapping unique chat IDs (`chat_1`, `chat_2`) to their title and message list.
+  * Tracks `current_chat_id` and a numeric `chat_counter`.
 
 ---
 
-### Error Handling
+### Part B: Screen 1 — Authentication Gate (Lines 44–80)
+
 ```python
-            # API Error
-            else:
-                st.error(
-                    f"Backend Error: "
-                    f"{response.status_code}"
-                )
-
-        # Connection Error
-        except Exception as error:
-            st.error(
-                f"Connection Failed: "
-                f"{error}"
-            )
+44: if not st.session_state.authenticated:
+...
+68:         if st.button("🚀 Enter Enterprise Workspace", use_container_width=True, type="primary"):
+69:             st.session_state.tenant_id = input_tenant.strip() or "tenant_default"
+70:             st.session_state.user_id = input_user.strip() or "usr_admin"
+71:             st.session_state.authenticated = True
+72:             st.rerun()
+76:     st.stop()
 ```
-- **Lines 46–57**:
-  - The `else` statement handles cases where the backend server runs but encounters an internal error (e.g., returns `HTTP 500`). We display a red error notification card showing the status code.
-  - The `except Exception` block intercepts connection errors (such as if the FastAPI server is completely offline). We capture the error details and display a red error message to guide the user.
+* Renders a centered enterprise card.
+* Captures `tenant_id` and `user_id`, sets `authenticated = True`, and reruns.
+* `st.stop()` prevents unauthorized rendering of the main chat workspace.
 
 ---
 
-## 3. Execution Trace Flow & Step-by-Step Walkthrough
+### Part C: Screen 2 — Sidebar Controls & Multi-Chat List (Lines 86–175)
 
-### Flow Diagram
+```python
+86: active_chat = st.session_state.chats[st.session_state.current_chat_id]
+87: active_messages = active_chat["messages"]
 ```
-                     User enters query & enters
-                                │
-                                ▼
-                   Streamlit Script Execution
-                     Starts (Top to Bottom)
-                                │
-                                ▼
-                       Check: Is query set?
-                 ├── No  ──► Render empty page
-                 └── Yes ──► Show Loading Spinner
-                                │
-                                ▼
-                       Assemble JSON Payload
-                                │
-                                ▼
-                       Submit HTTP POST to
-                      http://localhost:8000/
-                                │
-                                ▼
-                       Wait for Server Reply
-                 ┌──────────────┴──────────────┐
-                 ▼                             ▼
-            HTTP 200 OK                   Other / Error
-                 │                             │
-                 ▼                             ▼
-          Parse JSON data               Show error banner
-                 │                      (st.error / Offline)
-                 ▼                             │
-          Render answer &                      │
-             citations                         │
-                 │                             │
-                 └──────────────┬──────────────┘
-                                ▼
-                      Hide Loading Spinner
+* Grabs the active conversation object and message list based on `current_chat_id`.
+
+```python
+96:     if st.button("➕ New Chat", use_container_width=True):
+97:         st.session_state.chat_counter += 1
+98:         new_id = f"chat_{st.session_state.chat_counter}"
+99:         st.session_state.chats[new_id] = {
+100:             "title": "New Chat",
+101:             "messages": []
+102:         }
+103:         st.session_state.current_chat_id = new_id
+104:         st.rerun()
 ```
+* **Lines 96–104 (Creating a New Chat)**:
+  * Increments counter (`chat_2`, `chat_3`).
+  * Creates a new chat entry with empty messages.
+  * Switches `current_chat_id` to the new ID and reruns to present a fresh chat window.
+
+```python
+116:     # --- CHAT SESSIONS LIST (ChatGPT Style Multi-Chat) ---
+117:     st.markdown("### 💬 Conversations")
+118:     for c_id, c_data in list(st.session_state.chats.items()):
+119:         is_active = (c_id == st.session_state.current_chat_id)
+120:         btn_label = f"👉 {c_data['title']}" if is_active else f"💬 {c_data['title']}"
+121:         if st.button(btn_label, key=f"session_btn_{c_id}", use_container_width=True, type="primary" if is_active else "secondary"):
+122:             st.session_state.current_chat_id = c_id
+123:             st.rerun()
+```
+* **Lines 116–123 (Sidebar Chat Switcher)**:
+  * Iterates over all saved chats.
+  * Displays active chat with a primary highlight (`👉 [Title]`).
+  * Clicking any past chat switches `current_chat_id` and re-renders that conversation instantly.
+
+```python
+140:     if uploaded_files and st.button("📥 Index to Qdrant", use_container_width=True, type="primary"):
+...
+154:         from backend.injest_documents import ingest_documents
+155:         asyncio.run(ingest_documents(
+156:             target_dir, 
+157:             tenant_id=st.session_state.tenant_id, 
+158:             user_id=st.session_state.user_id
+159:         ))
+```
+* Runs async ingestion with progress feedback, tagging chunks with active tenant and user.
 
 ---
 
-### Input and Output Specifications
-* **Input**: User clicks/interactions in the browser window.
-* **Output**: Renders interactive web widgets (buttons, boxes, loaders, text layouts) in the browser window.
+### Part D: Screen 2 — Chat Feed & Auto-Titling (Lines 185–290)
+
+```python
+216: user_query = st.chat_input("Ask a question about your enterprise documents...")
+218: if user_query:
+219:     if active_chat["title"] == "New Chat":
+220:         clean_title = user_query.strip()
+221:         active_chat["title"] = clean_title[:26] + ("..." if len(clean_title) > 26 else "")
+```
+* **Auto-Titling Logic:** If the active chat title is still `"New Chat"`, automatically sets its title to the first 26 characters of the user's question.
+
+```python
+223:     active_messages.append({"role": "user", "content": user_query})
+224:     with st.chat_message("user"):
+225:         st.markdown(user_query)
+...
+274:         except httpx.ConnectError:
+275:             response_placeholder.warning(
+276:                 "⚠️ **Backend API Server is Offline**\n\n"
+277:                 "The FastAPI backend is not running on `http://localhost:8000`.\n\n"
+278:                 "**To run end-to-end with live AI generation:**\n"
+279:                 "```bash\nuvicorn backend.main:app --reload\n```\n"
+280:                 "*You are currently exploring the frontend UI in standalone mode.*"
+281:             )
+282:             full_response = "Backend offline (Preview Mode)"
+...
+286:         active_messages.append({
+287:             "role": "assistant",
+288:             "content": full_response,
+289:             "citations": citations,
+290:             "contexts": contexts,
+291:             "chunk_ids": chunk_ids,
+292:             "telemetry": telemetry
+293:         })
+294:         st.rerun()
+```
+* Appends both user question and streamed assistant response to `active_messages`.
+* Handles offline status gracefully without crashing, enabling standalone frontend exploration.
 
 ---
 
-### Step-by-Step Variable Trace Walkthrough
-Assume the user types `"What is bias?"` in the input widget and presses enter:
+### Part E: Interactive Citations Drawer & FinOps Telemetry Metrics (Lines 220–246)
 
-1. **State Trigger**: Streamlit detects a state change. It automatically reruns `app.py` from top to bottom.
-2. **Title Creation**: The browser draws the heading `"Hybrid RAG Chatbot"`.
-3. **Input Extraction**: `st.text_input` captures the input and assigns `query = "What is bias?"`.
-4. **Conditional Check**: `if "What is bias?"` evaluates to `True`.
-5. **Spinner Start**: A loading spinner appears at the bottom of the page.
-6. **Payload Construction**: Sets `payload = {"prompt": "What is bias?"}`.
-7. **HTTP POST Request**: Sends a request to `http://localhost:8000/chat`.
-8. **Waiting & Response**:
-   - The FastAPI backend finishes running.
-   - The server replies with a payload of status `200` and body:
-     `{"answer": "Bias is...", "citations": ["concepts.txt"], ...}`.
-9. **Rendering**:
-   - The spinner vanishes.
-   - Draws subheader `"Answer"` and text `"Bias is..."`.
-   - Draws subheader `"Sources"` and a bullet point `"- concepts.txt"`.
+```python
+236:                     with st.expander("📊 Latency & FinOps Telemetry"):
+237:                         m1, m2 = st.columns(2)
+238:                         m1.metric("TTFT", f"{telemetry.get('ttft_ms', 0)} ms")
+239:                         m2.metric("Total Time", f"{telemetry.get('total_latency_sec', 0)} s")
+240:                         
+241:                         m3, m4 = st.columns(2)
+242:                         total_tok = telemetry.get("total_tokens", 0)
+243:                         q_tok = telemetry.get("prompt_tokens", 0)
+244:                         r_tok = telemetry.get("completion_tokens", 0)
+245:                         m3.metric(
+246:                             "Tokens", 
+247:                             f"{total_tok}", 
+248:                             delta=f"Q: {q_tok} | R: {r_tok}", 
+249:                             delta_color="off"
+250:                         )
+251:                         m4.metric("Cost (USD)", f"${telemetry.get('estimated_cost_usd', 0.0):.6f}")
+```
+* **TTFT (`ttft_ms`)**: Measures Time-To-First-Token in milliseconds (the universal industry standard for measuring perceived latency).
+* **Token Breakdown (`delta=f"Q: {q_tok} | R: {r_tok}"`)**:
+  * Displays the total token consumption as the primary metric.
+  * In the sub-badge, explicitly breaks down:
+    * **`Q` (Query/Prompt Tokens)**: System instructions + 3 retrieved document chunks + user question. In RAG systems, prompt tokens represent $85\%-95\%$ of total token usage!
+    * **`R` (Response/Completion Tokens)**: Tokens generated by the LLM in its response.
+  * `delta_color="off"` renders the sub-badge in clean neutral gray without altering column widths.
 
 ---
 
-## 4. Deep Technical Concepts
+## 5. Summary of Multi-Chat Behavior
 
-### Streamlit's Execution Model
-Unlike traditional web frameworks (like React or Django) that update specific components using event listeners or state hooks, **Streamlit** uses a simple top-to-bottom rerun model. Every time a user interacts with a widget (typing in a box, clicking a button, or sliding a bar), Streamlit reruns the entire Python script from Line 1 to the end. The framework handles caching and rendering optimizations behind the scenes so the interface updates seamlessly.
-
-### Client-Server Decoupling
-This project utilizes a decoupled **Client-Server Architecture**. The frontend script (`app.py`) is completely independent of the RAG retrieval logic. It only handles rendering the layout and making HTTP requests. The backend (`main.py`) handles processing the data. This allows developers to modify backend models, database indexing configurations, or reranking models without changing a single line of code in the user interface.
-
----
-
-## 5. Architectural Choices and Alternatives
-
-### Why Streamlit?
-Streamlit is an excellent choice for AI and data science applications. It enables developers to construct fully interactive web dashboards in pure Python without writing HTML, CSS, JavaScript, or build scripts.
-
-#### Alternatives and Trade-offs
-
-| UI Framework | Language / Stack | Pros | Cons |
-| :--- | :--- | :--- | :--- |
-| **Streamlit** *(Chosen)* | Python | • 100% Python (no JS required).<br>• Extremely rapid prototyping. | • Limited layout flexibility.<br>• Every user click reruns the entire script, which can be inefficient for heavy apps. |
-| **Vanilla HTML + JavaScript** | JS / CSS / HTML | • Works natively in all browsers with zero setup.<br>• Total control over styles and scripts. | • Requires writing frontend boilerplate (DOM parsing, fetch promises, manual layout building). |
-| **React / Next.js** | TypeScript | • Industry standard for production apps.<br>• Highly interactive, smooth client rendering. | • High complexity.<br>• Requires setting up Node.js pipelines. |
+| User Action | What Happens in Background State | What You See on Screen |
+| :--- | :--- | :--- |
+| **Types 1st question in Chat 1** (*"What is ML?"*) | `chat_1["title"]` becomes `"What is ML..."`. Appends prompt + answer to `chat_1["messages"]`. | Sidebar updates to `👉 What is ML...`. Chat bubbles appear. |
+| **Clicks "➕ New Chat"** | Increments counter. Creates `chat_2` with `messages = []`. Sets `current_chat_id = "chat_2"`. | Sidebar shows both chats. Chat area clears to a fresh window. |
+| **Types question in Chat 2** (*"Explain DL..."*) | `chat_2["title"]` becomes `"Explain DL..."`. Appends prompt + answer to `chat_2["messages"]`. | Sidebar updates to `👉 Explain DL...`. Chat bubbles appear. |
+| **Clicks "💬 What is ML..."** | Sets `current_chat_id = "chat_1"`. | **Instantly displays your exact ML question and answer!** |
+| **Clicks "💬 Explain DL..."** | Sets `current_chat_id = "chat_2"`. | **Instantly displays your exact DL question and answer!** |
