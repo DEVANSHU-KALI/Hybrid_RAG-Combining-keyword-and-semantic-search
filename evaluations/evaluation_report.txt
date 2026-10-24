@@ -1,11 +1,11 @@
 ========================================================================================
 ENTERPRISE HYBRID RAG: AUTOMATED QUALITY EVALUATION REPORT
 ========================================================================================
-Execution Timestamp : 2026-10-23 23:38:54
+Execution Timestamp : 2026-10-24 15:15:51
 Framework           : Local Zero-Cost ($0.00) RAG Triad Evaluator
 Evaluator Models    : BAAI/bge-base-en-v1.5 (768D) + ms-marco-MiniLM-L-6-v2 (Cross-Encoder)
 Total Queries Tested: 7
-Total Run Time      : 229.19 seconds
+Total Run Time      : 347.12 seconds
 Cloud API Cost      : $0.00 (100% Offline & Local)
 ========================================================================================
 
@@ -15,135 +15,143 @@ INDIVIDUAL QUERY EVALUATION BREAKDOWN
 
 [1/7] QUESTION: How do Hybrid Retrieval and Reciprocal Rank Fusion (RRF) work together to combine BM25 keyword search with dense vector search?
 ANSWER:
-Hybrid retrieval combines keyword search and semantic vector search methods for the same query. Each method produces candidate documents with its own scores or rankings. Reciprocal Rank Fusion (RRF) then combines these ranks instead of raw scores. In RRF, each document's contribution is based on its position in each result list. This approach is particularly useful when the score scales from different retrieval methods differ, as it avoids one method's scores dominating the final ranking due to their scale. By considering the position of each document in the result lists, RRF provides a fairer way to integrate the results from BM25 keyword search and dense vector search, ensuring that both types of evidence contribute appropriately to the final ranking of documents.
+Hybrid retrieval combines keyword search and semantic vector search methods for the same query. Each method generates a candidate document list with its own scores or ranking. Reciprocal Rank Fusion (RRF) then combines these ranked lists rather than raw scores. In RRF, each document gets a contribution based on its position in each result list. This approach is particularly useful when the scales of scores from different retrieval methods differ significantly. By focusing on the rank of documents in both lists, RRF can effectively combine the strengths of both BM25 keyword search and dense vector search, ensuring a balanced integration of their respective evidence.
 
 METRICS:
-  • Faithfulness (Anti-Hallucination)    : 0.0000  [Threshold >= 0.85] -> WARN
-  • Answer Relevancy (Directness)        : 0.9094  [Threshold >= 0.80] -> PASS
-  • Context Relevance (Retrieval Signal) : 0.9727  [Threshold >= 0.60] -> PASS
+  • Faithfulness (Anti-Hallucination)    : 1.0000  [Threshold >= 0.85] -> PASS
+  • Answer Relevancy (Directness)        : 0.9119  [Threshold >= 0.80] -> PASS
+  • Context Relevance (Retrieval Signal) : 0.7735  [Threshold >= 0.60] -> PASS
   • Context Recall (Ground Truth Match)  : 0.7500
-  • Generation Latency                   : 24.44s
+  • Generation Latency                   : 36.12s
 ----------------------------------------------------------------------------------------
 
 [2/7] QUESTION: What is the difference between a Bi-Encoder and a Cross-Encoder Reranker, and why are Cross-Encoders not used for initial search over the entire corpus?
 ANSWER:
-A Bi-Encoder retrieval system embeds the query and document separately, while a Cross-Encoder reranker models the interactions between the words and context of the query and passage. This difference often allows Cross-Encoders to improve the ordering among a small set of candidates, especially when several passages share vocabulary but differ in how well they answer the question.
+A Bi-Encoder retrieval system embeds the query and document separately, whereas a Cross-Encoder reranker directly models the interactions between the words and context of the query and passage. This direct modeling often improves the ordering among a small set of candidates, especially when several passages share vocabulary but differ in how well they answer the question.
 
-Cross-Encoders are not used for initial search over the entire corpus because they are more expensive to apply. Each query-passage pair must be processed, making it less feasible to use them to retrieve an initial, manageable candidate set from a large collection of documents. Instead, a common approach is to first use a retrieval method like BM25, vector search, or hybrid fusion to get a smaller set of candidates, and then rerank these candidates with a Cross-Encoder.
+Cross-Encoders are not typically used for initial search over the entire corpus because they are more expensive to apply. Each query-passage pair must be processed, making them less suitable for retrieving a large number of candidates efficiently. Instead, a common approach is to first retrieve a manageable candidate set using methods like BM25, vector search, or hybrid fusion, and then rerank those candidates using a Cross-Encoder. This strategy balances the need for relevance with computational efficiency.
 
 METRICS:
-  • Faithfulness (Anti-Hallucination)    : 0.0000  [Threshold >= 0.85] -> WARN
-  • Answer Relevancy (Directness)        : 0.9079  [Threshold >= 0.80] -> PASS
-  • Context Relevance (Retrieval Signal) : 0.3333  [Threshold >= 0.60] -> WARN
+  • Faithfulness (Anti-Hallucination)    : 0.6667  [Threshold >= 0.85] -> WARN
+  • Answer Relevancy (Directness)        : 0.8876  [Threshold >= 0.80] -> PASS
+  • Context Relevance (Retrieval Signal) : 0.7119  [Threshold >= 0.60] -> PASS
   • Context Recall (Ground Truth Match)  : 1.0000
-  • Generation Latency                   : 21.75s
+  • Generation Latency                   : 36.21s
 ----------------------------------------------------------------------------------------
 
 [3/7] QUESTION: What causes hallucinations in Large Language Models, and how does grounded generation in RAG mitigate them?
 ANSWER:
-Hallucinations in large language models can occur due to several factors, including:
+Hallucinations in large language models can occur due to several factors, including missing evidence, poor retrieval, ambiguous passages, misleading instructions, or the model adding details that are not present in the retrieved context. 
 
-- Missing evidence: The model may generate information not supported by the available data.
-- Poor retrieval: In a RAG system, if the retrieval stage fails to find relevant documents, the model might generate information unsupported by any evidence.
-- Ambiguous passages: Unclear or ambiguous text in the context can lead to the model generating incorrect information.
-- Misleading instructions: If the user's input is misleading or unclear, the model might generate incorrect or unsupported information.
-- Model adding details: The model might create details that are not present in the input or context.
-
-Grounded generation in RAG mitigates hallucinations by:
-
-- Involving an information-retrieval stage: The system searches for relevant documents to support the generated output, which helps ensure that the generated content is grounded in real-world evidence.
-- Providing context: By including relevant passages from retrieved documents in the prompt, the model is more likely to generate accurate and supported information.
-- Promoting separate evaluation of retrieval and generation: This allows for identifying where failures occur, enabling better mitigation strategies.
-
-While RAG does not guarantee factual correctness, it reduces the likelihood of hallucinations by grounding the generation process in external, fact-checked documents.
+Grounded Generation in RAG mitigates these hallucinations by integrating an information-retrieval stage with a language-generation stage. Instead of relying solely on the model's internal parameters, RAG searches a collection of documents for relevant passages. These passages are then included in the prompt alongside the question, providing the language model with additional context. By doing so, the model's generation process is grounded in the provided evidence, which helps to ensure that the output is more aligned with the actual information available in the documents. This approach does not automatically guarantee factual correctness, but it significantly reduces the likelihood of hallucinations by ensuring that the model's answers are based on the evidence provided.
 
 METRICS:
-  • Faithfulness (Anti-Hallucination)    : 0.0000  [Threshold >= 0.85] -> WARN
-  • Answer Relevancy (Directness)        : 0.8802  [Threshold >= 0.80] -> PASS
-  • Context Relevance (Retrieval Signal) : 0.3958  [Threshold >= 0.60] -> WARN
+  • Faithfulness (Anti-Hallucination)    : 1.0000  [Threshold >= 0.85] -> PASS
+  • Answer Relevancy (Directness)        : 0.8997  [Threshold >= 0.80] -> PASS
+  • Context Relevance (Retrieval Signal) : 0.7363  [Threshold >= 0.60] -> PASS
   • Context Recall (Ground Truth Match)  : 1.0000
-  • Generation Latency                   : 32.37s
+  • Generation Latency                   : 38.18s
 ----------------------------------------------------------------------------------------
 
 [4/7] QUESTION: How do forward propagation, loss functions, backpropagation, and optimizers work together to train a neural network?
 ANSWER:
-Training a neural network involves a series of steps that work together to iteratively improve the network's predictions. Here’s how forward propagation, loss functions, backpropagation, and optimizers collaborate:
+Forward propagation, loss functions, backpropagation, and optimizers work together to train a neural network in the following way:
 
-1. **Forward Pass**: During a forward pass, the input features are transformed through layers of the neural network. Each layer applies a learned weight and a nonlinear activation function, ultimately producing a prediction. The loss function then compares this prediction to the actual target value to calculate the error.
+1. **Forward Pass**: During a forward pass, the neural network processes input data through its layers, transforming input features into a prediction. Each layer applies a learned weight and a nonlinear activation function to the data, ultimately producing an output that is compared to the target value.
 
-2. **Loss Function**: The loss function evaluates the prediction accuracy by quantifying the difference between the network’s output and the desired target. Different tasks may use different loss functions:
-   - For regression tasks, common loss functions include Mean Squared Error (MSE) and Mean Absolute Error (MAE).
-   - For classification tasks, Cross-Entropy Loss is frequently used.
+2. **Loss Calculation**: A loss function evaluates how well the network’s prediction matches the target value. Common loss functions for classification include cross-entropy, while mean squared error (MSE) or mean absolute error (MAE) are often used for regression tasks. The choice of loss function depends on the task at hand.
 
-3. **Backpropagation**: Backpropagation computes the gradients of the loss with respect to the parameters of the network. This involves calculating how each parameter affects the loss, working backward from the output layer to the input layer. The goal is to determine the direction and magnitude of the gradient, indicating how each parameter should be adjusted.
+3. **Backpropagation**: Backpropagation computes the gradient of the loss with respect to the network’s parameters. It calculates these gradients by propagating the error backwards through the network, starting from the output layer and moving towards the input layer. This process helps to determine how much each parameter contributes to the overall error.
 
-4. **Optimizers**: Optimizers use the gradients computed by backpropagation to update the network’s parameters. The process aims to minimize the loss function. Different optimizers use various strategies to update parameters, such as adjusting the learning rate, momentum, and other hyperparameters. Examples include Stochastic Gradient Descent (SGD), Adam, and RMSprop.
+4. **Parameter Update**: An optimizer then uses the gradients computed by backpropagation to update the network’s parameters. Optimizers, such as gradient descent, Stochastic Gradient Descent (SGD), or Adam, use these gradients to adjust the parameters in a way that minimizes the loss function. The goal is to iteratively refine the model’s predictions to better match the desired outputs.
 
-The process of forward pass, loss calculation, backpropagation, and parameter updates is repeated over multiple batches and epochs. This iterative process helps the neural network learn from the data and improve its predictive accuracy over time.
+This process is repeated over many batches of examples and epochs (complete passes through the training dataset), continuously improving the model’s ability to make accurate predictions.
 
 METRICS:
-  • Faithfulness (Anti-Hallucination)    : 0.0000  [Threshold >= 0.85] -> WARN
-  • Answer Relevancy (Directness)        : 0.8817  [Threshold >= 0.80] -> PASS
-  • Context Relevance (Retrieval Signal) : 0.9966  [Threshold >= 0.60] -> PASS
+  • Faithfulness (Anti-Hallucination)    : 0.9231  [Threshold >= 0.85] -> PASS
+  • Answer Relevancy (Directness)        : 0.9015  [Threshold >= 0.80] -> PASS
+  • Context Relevance (Retrieval Signal) : 0.8290  [Threshold >= 0.60] -> PASS
   • Context Recall (Ground Truth Match)  : 1.0000
-  • Generation Latency                   : 45.76s
+  • Generation Latency                   : 54.75s
 ----------------------------------------------------------------------------------------
 
 [5/7] QUESTION: What are the trade-offs between very large chunks and very small chunks in document chunking, and why do tables require special care?
 ANSWER:
-Very large chunks in document chunking may contain several unrelated ideas, leading to imprecise retrieval and increased computational cost due to the model’s context window being consumed more. On the other hand, very small chunks might remove necessary background information, splitting definitions from their explanations or separating tables from the paragraphs that explain them, thus compromising context completeness.
+In document chunking, the trade-offs between very large chunks and very small chunks are as follows:
 
-Tables require special care during chunking because splitting them between rows or columns can disrupt the relationship between values and their headings, potentially leading to misinterpretation or loss of meaningful information.
+- **Very Large Chunks:**
+  - **Retrieval Precision:** They may contain several unrelated ideas, leading to imprecise retrieval.
+  - **Context Window:** They can consume more of the model’s context window, potentially limiting the ability to understand the context of individual chunks.
+
+- **Very Small Chunks:**
+  - **Context Completeness:** They can remove necessary background information, making it difficult to understand the full context of the document.
+  - **Definition-Explanation Split:** Definitions might be separated from their explanations, leading to a loss of clarity.
+  - **Table Relationships:** Tables can be split between rows or columns, destroying the relationship between values and their headings, which is crucial for understanding the data presented.
+
+Tables require special care because:
+- Splitting tables can disrupt the relationship between values and their headings, which is essential for comprehension.
 
 METRICS:
-  • Faithfulness (Anti-Hallucination)    : 0.0000  [Threshold >= 0.85] -> WARN
-  • Answer Relevancy (Directness)        : 0.8715  [Threshold >= 0.80] -> PASS
-  • Context Relevance (Retrieval Signal) : 0.3277  [Threshold >= 0.60] -> WARN
+  • Faithfulness (Anti-Hallucination)    : 0.9000  [Threshold >= 0.85] -> PASS
+  • Answer Relevancy (Directness)        : 0.8817  [Threshold >= 0.80] -> PASS
+  • Context Relevance (Retrieval Signal) : 0.6622  [Threshold >= 0.60] -> PASS
   • Context Recall (Ground Truth Match)  : 0.6667
-  • Generation Latency                   : 15.16s
+  • Generation Latency                   : 41.14s
 ----------------------------------------------------------------------------------------
 
 [6/7] QUESTION: What are the common dataset split strategies in machine learning, and why should the test set not be used during development?
 ANSWER:
-In machine learning, common dataset split strategies typically involve dividing the data into training, validation, and test sets. This separation is crucial for evaluating model performance accurately and avoiding biases that could arise from using the same data for both training and testing.
+In machine learning, common dataset split strategies typically involve dividing the data into training, validation, and test sets. Here’s a detailed breakdown:
 
-The test set should not be used during development because doing so can lead to what is known as "test result leaks." When the test set is repeatedly used to make design decisions, it gradually becomes part of the development process. This repeated use can result in an overly optimistic evaluation of the model's performance since the model has been optimized using information from the test set. In essence, using the test set for development compromises its role as an independent evaluation mechanism, leading to unreliable final performance estimates.
+| Split Strategy | Purpose |
+| --- | --- |
+| **Training Set** | Used to learn the model parameters. |
+| **Validation Set** | Assists in choosing configurations like feature selection, hyperparameters, thresholds, and model comparisons. |
+| **Test Set** | Provides a final evaluation of the model after all development decisions are made. |
 
-To maintain the integrity of the test set, it should be used only once, at the very end, to provide a final evaluation of the model after all development decisions have been made. This practice ensures that the test set remains a true reflection of the model's performance under real-world conditions.
+The test set should not be used during development because:
+
+1. **Leakage Risk**: Repeatedly using the same test set for making design decisions can lead to data leakage, where information from the test set influences the training process. This can result in an overly optimistic performance estimate, as the model becomes adapted to the specific characteristics of the test set.
+
+2. **Unrealistic Results**: For time-dependent data, a random split might not be appropriate. Evaluating the model on past data after training on future data can lead to unrealistic performance metrics, as the model might not generalize well to real-world scenarios.
+
+3. **Avoiding Information Leakage**: The test set should remain a pristine, untouched source to provide an unbiased evaluation of the model. Using the test set during development can introduce information leakage, such as including target-derived features or standardizing the entire dataset, which would not be available at the time of actual prediction.
+
+By keeping the test set independent, the evaluation remains a true reflection of the model's performance in the real world.
 
 METRICS:
-  • Faithfulness (Anti-Hallucination)    : 0.0000  [Threshold >= 0.85] -> WARN
-  • Answer Relevancy (Directness)        : 0.8647  [Threshold >= 0.80] -> PASS
-  • Context Relevance (Retrieval Signal) : 0.8915  [Threshold >= 0.60] -> PASS
+  • Faithfulness (Anti-Hallucination)    : 0.9000  [Threshold >= 0.85] -> PASS
+  • Answer Relevancy (Directness)        : 0.8762  [Threshold >= 0.80] -> PASS
+  • Context Relevance (Retrieval Signal) : 0.7502  [Threshold >= 0.60] -> PASS
   • Context Recall (Ground Truth Match)  : 1.0000
-  • Generation Latency                   : 27.24s
+  • Generation Latency                   : 52.94s
 ----------------------------------------------------------------------------------------
 
 [7/7] QUESTION: How do Dropout Regularization and Early Stopping help prevent overfitting in machine learning models?
 ANSWER:
 Dropout Regularization and Early Stopping help prevent overfitting in machine learning models through different mechanisms.
 
-- **Dropout Regularization**: During training, it randomly masks activations, reducing reliance on specific patterns or features. This makes the model less prone to overfitting by ensuring that the model does not overly depend on particular pathways or connections. However, it is important to tune the dropout rate and not use it as a universal fix, as indicated in the table.
+- **Dropout Regularization**: During training, this technique randomly masks (drops out) a subset of activations, discouraging the model from relying on specific pathways. This randomness forces the model to learn more robust and generalized features, reducing overfitting to the training data.
 
-- **Early Stopping**: It involves monitoring the validation performance and stopping the training process when the performance no longer improves. This helps in preventing the model from learning noise in the training data, thus avoiding overfitting. If the validation loss suddenly changes, it is advisable to inspect the data pipeline and evaluation procedure before redesigning the architecture.
+- **Early Stopping**: This technique monitors the model's performance on a validation set during training. It stops the training process early when the validation performance starts to degrade, preventing the model from overfitting to the training data. By halting training before the model's complexity increases beyond what the validation set can handle, early stopping helps ensure that the model generalizes better to unseen data.
 
-Together, these techniques can effectively manage the risk of overfitting, though they should be used in combination with other strategies like weight decay and data augmentation for comprehensive regularization.
+Together, these methods address different causes of overfitting and can be combined to improve model robustness and generalization.
 
 METRICS:
-  • Faithfulness (Anti-Hallucination)    : 0.0000  [Threshold >= 0.85] -> WARN
-  • Answer Relevancy (Directness)        : 0.8928  [Threshold >= 0.80] -> PASS
-  • Context Relevance (Retrieval Signal) : 0.9490  [Threshold >= 0.60] -> PASS
+  • Faithfulness (Anti-Hallucination)    : 1.0000  [Threshold >= 0.85] -> PASS
+  • Answer Relevancy (Directness)        : 0.9057  [Threshold >= 0.80] -> PASS
+  • Context Relevance (Retrieval Signal) : 0.7681  [Threshold >= 0.60] -> PASS
   • Context Recall (Ground Truth Match)  : 1.0000
-  • Generation Latency                   : 27.09s
+  • Generation Latency                   : 38.24s
 ----------------------------------------------------------------------------------------
 
 ========================================================================================
 OVERALL PIPELINE QUALITY & SYSTEM HEALTH SUMMARY
 ========================================================================================
-• Mean Faithfulness (Groundedness)    : 0.0000  (Threshold >= 0.85) -> ACTION NEEDED
-• Mean Answer Relevancy (Directness)  : 0.8869  (Threshold >= 0.80) -> HEALTHY
-• Mean Context Relevance (Precision)  : 0.6952  (Threshold >= 0.60) -> HEALTHY
+• Mean Faithfulness (Groundedness)    : 0.9128  (Threshold >= 0.85) -> HEALTHY
+• Mean Answer Relevancy (Directness)  : 0.8949  (Threshold >= 0.80) -> HEALTHY
+• Mean Context Relevance (Precision)  : 0.7473  (Threshold >= 0.60) -> HEALTHY
 • Mean Context Recall (Completeness)  : 0.9167  (Threshold >= 0.80)
-• System Benchmark Verdict            : NEEDS REVIEW
-• Audit Completed At                  : 2026-10-23 23:38:54
+• System Benchmark Verdict            : PASSED ALL BENCHMARK GATES
+• Audit Completed At                  : 2026-10-24 15:15:51
 ========================================================================================

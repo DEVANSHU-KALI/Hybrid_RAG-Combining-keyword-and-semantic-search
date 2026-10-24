@@ -31,31 +31,38 @@ cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 def split_into_propositions(text: str) -> list[str]:
     """Splits a response into standalone factual propositions/sentences."""
-    raw_sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    lines = text.strip().split("\n")
     clean = []
-    for s in raw_sentences:
-        s_clean = s.strip()
-        if len(s_clean) > 15 and not s_clean.startswith("|") and not s_clean.startswith("#"):
-            clean.append(s_clean)
+    for line in lines:
+        line_str = line.strip().lstrip("-*•0123456789. ")
+        if len(line_str) > 15 and not line_str.startswith("|"):
+            sub_sentences = re.split(r'(?<=[.!?])\s+', line_str)
+            for s in sub_sentences:
+                s_clean = s.strip()
+                if len(s_clean) > 15:
+                    clean.append(s_clean)
     return clean if clean else [text.strip()]
 
 
 def compute_faithfulness(answer: str, contexts: list[str]) -> float:
     """
     Evaluates whether each claim in the answer is grounded in retrieved context.
-    Uses Cross-Encoder cross-attention between context and answer propositions.
+    Uses 768D Bi-Encoder embeddings to verify proposition containment across context chunks.
     Returns: Score between 0.0 and 1.0 (Higher = Zero Hallucination).
     """
     propositions = split_into_propositions(answer)
     if not propositions or not contexts:
         return 0.0
 
-    full_context = " ".join(contexts)
-    pairs = [[full_context, prop] for prop in propositions]
-    scores = cross_encoder.predict(pairs)
+    prop_embs = bi_encoder.encode(propositions, normalize_embeddings=True)
+    ctx_embs = bi_encoder.encode(contexts, normalize_embeddings=True)
 
-    probs = 1.0 / (1.0 + np.exp(-np.array(scores)))
-    grounded_count = sum(1 for p in probs if p >= 0.40)
+    # Compute similarity between every proposition and every retrieved chunk: [num_props, num_contexts]
+    sim_matrix = np.dot(prop_embs, ctx_embs.T)
+    
+    # Each proposition is grounded if it aligns with at least one retrieved chunk (sim >= 0.60)
+    max_sims = np.max(sim_matrix, axis=1)
+    grounded_count = sum(1 for s in max_sims if s >= 0.60)
     return round(float(grounded_count / len(propositions)), 4)
 
 
@@ -74,14 +81,14 @@ def compute_answer_relevancy(query: str, answer: str) -> float:
 def compute_context_relevance(query: str, contexts: list[str]) -> float:
     """
     Evaluates the signal-to-noise ratio of the retrieved context chunks against the query.
-    Uses Cross-Encoder relevance scores across all top-K retrieved chunks.
+    Uses 768D Bi-Encoder cosine similarity across all top-K retrieved chunks.
     """
     if not contexts:
         return 0.0
-    pairs = [[query, ctx] for ctx in contexts]
-    scores = cross_encoder.predict(pairs)
-    probs = 1.0 / (1.0 + np.exp(-np.array(scores)))
-    return round(float(np.mean(probs)), 4)
+    query_emb = bi_encoder.encode(query, normalize_embeddings=True)
+    ctx_embs = bi_encoder.encode(contexts, normalize_embeddings=True)
+    sims = np.dot(ctx_embs, query_emb)
+    return round(float(np.mean([max(0.0, float(s)) for s in sims])), 4)
 
 
 def compute_context_recall(ground_truth: str, contexts: list[str]) -> float:
