@@ -1,6 +1,6 @@
 # Conceptual Guide: `1) key_concepts.md`
 
-This document serves as a high-level guide to the core software engineering, database, and machine learning concepts implemented throughout this Hybrid RAG project.
+This document serves as a high-level guide to the core software engineering, database, and machine learning concepts implemented throughout this Multi-Tenant Hybrid RAG project.
 
 ---
 
@@ -11,12 +11,12 @@ This document serves as a high-level guide to the core software engineering, dat
 
 ### Architecture Diagram
 ```
-    User Query ─────────► [ Retrieval Stage ] ─────────► [ Augmentation Stage ] ─────────► [ Generation Stage ]
-                             │                              │                                 │
-                             ▼                              ▼                                 ▼
-                     Scan Vector DB &                Inject retrieved                 Local Qwen model
-                     Keyword Indexes                 document text into               generates grounded
-                     for matching chunks             prompt context template          response
+    User Query ─────────► [ Multi-Tenant Hybrid Retrieval ] ─────────► [ Augmentation Stage ] ─────────► [ Generation & Streaming ]
+                             │                                              │                                  │
+                             ▼                                              ▼                                  ▼
+                     Scan Vector DB (768D) &                        Inject retrieved                   Local Qwen 2.5 / Groq
+                     BM25 Keyword Indexes with                      document text into                 streams tokens via SSE
+                     tenant_id payload filters                      strict grounding prompt            with FinOps telemetry
 ```
 
 ---
@@ -27,6 +27,7 @@ Information retrieval in modern RAG systems uses two main paradigms:
 
 ### A. Dense Semantic Retrieval
 * **Concept**: Converts queries and document chunks into dense floating-point vectors (embeddings) where conceptual meaning is represented by spatial coordinates. Search matches concepts rather than character patterns.
+* **Model Used**: **`BAAI/bge-base-en-v1.5`** (768-dimensional embeddings), specifically optimized for dense retrieval and asymmetric semantic search.
 * **Metric (Cosine Similarity)**: Measures the directional overlap (angle) between the query vector ($\mathbf{A}$) and document vector ($\mathbf{B}$):
   $$\text{Cosine Similarity}(\mathbf{A}, \mathbf{B}) = \frac{\mathbf{A} \cdot \mathbf{B}}{\|\mathbf{A}\| \|\mathbf{B}\|} = \frac{\sum_{i=1}^{n} A_i B_i}{\sqrt{\sum_{i=1}^{n} A_i^2} \sqrt{\sum_{i=1}^{n} B_i^2}}$$
 * **Used in**: `semantic_retriever.py` and `embedding_model.py`.
@@ -40,9 +41,37 @@ Information retrieval in modern RAG systems uses two main paradigms:
   * $k_1$ and $b$: Tuning parameters ($k_1$ controls term frequency saturation; $b$ controls length normalization).
 * **Used in**: `bm25_retriever.py`.
 
+### C. LangChain Wrapper vs. Raw `SentenceTransformer` Interface
+* **Concept**: Raw `SentenceTransformer` provides only a single `.encode()` method for all inputs. However, modern RAG architecture relies on **Asymmetric Retrieval**, where search queries and document passages have different embedding requirements.
+* **Interface Distinction**:
+  - `embed_documents(texts)`: Embeds batch document passages as static corpus chunks.
+  - `embed_query(text)`: Embeds user queries, applying instruction prefixes or specialized query pooling.
+* **Why the Wrapper?** Using `HuggingFaceEmbeddings` provides a standardized interface expected by LangChain chunkers, retrievers, and vector stores, ensuring queries and documents are processed with their correct respective methods.
+
 ---
 
-## 3. Semantic Chunking
+## 3. High-Fidelity Tabular PDF Ingestion & Geometric Bounding-Box Cropping
+
+PDF documents present a major hazard for RAG pipelines: standard text extractors (`pypdf`, basic OCR) read glyphs across columns, smashing structured tables into unreadable prose and creating duplicate chunks.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│ GEOMETRIC BOUNDING-BOX CROP (backend/injest_documents.py)             │
+├────────────────────────────────────────────────────────────────────────┤
+│ 1. Prose ABOVE Table      ──► page.crop((0, prev_bottom, w, top))      │
+│ 2. TABLE REGION           ──► page.find_tables() converted to Markdown │
+│ 3. Prose BELOW Table      ──► page.crop((0, bottom, w, h))             │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Geometric Bounding-Box Detection**: Using `pdfplumber.find_tables()`, the parser locates exact table boundaries `(x0, top, x1, bottom)`. Narrative prose is cropped strictly *outside* table boxes.
+2. **In-Place Markdown Assembly**: Tables are converted to clean GitHub-flavored Markdown tables and placed at their authentic reading positions between surrounding paragraphs.
+3. **Chunk-Level Metadata Accuracy**: Rather than inheriting coarse page-level booleans (which caused pure text chunks to falsely advertise `"has_table": true`), each chunk is dynamically inspected for Markdown table rows (`| ... |`), ensuring metadata filters remain 100% accurate.
+4. **Pre-Table Chunk Isolation**: When chunking, if a table is encountered and the running chunk already holds $>500$ characters, the chunker splits immediately before the table, ensuring tables remain intact.
+
+---
+
+## 4. Semantic Chunking & Boundary Optimization
 
 ### Definition
 **Semantic Chunking** is a text splitting technique that groups text based on thematic transitions rather than arbitrary character or token counts. It processes a document sentence-by-sentence, calculates the semantic distance between consecutive sentences, and inserts a breakpoint (starts a new chunk) when the semantic distance exceeds a dynamically calculated percentile threshold.
@@ -60,18 +89,10 @@ Sentence S2 ──► [Embedding Model] ──► Vector V2 ──┘           
 
 ---
 
-## 4. Score Fusion: Concept, Evolution, and Architecture
+## 5. Score Fusion: Concept, Evolution, and Architecture
 
 ### What is Score Fusion?
 In a hybrid search system, dense semantic retrieval and sparse BM25 retrieval output independent lists of candidates, each with its own scoring metric. **Score Fusion** is the mathematical technique used to combine these disparate scores into a single, unified ranking score. 
-
-The strategy used to fuse these scores dictates how the search engine balances keyword matching vs. conceptual similarity.
-
----
-
-### The Evolution of Score Fusion Techniques
-
-Each fusion technique in search engineering evolved to address the weaknesses of its predecessor:
 
 ```
     [ Simple Addition ] ─────────► [ Weighted Linear Fusion ] ─────────► [ Reciprocal Rank Fusion (RRF) ]
@@ -80,142 +101,104 @@ Each fusion technique in search engineering evolved to address the weaknesses of
    equally important.             hyperparameter tuning).                outliers and scaling biases.
 ```
 
-#### 1. Simple Addition Fusion *(Basic)*
-* **How it works**: Raw scores are normalized to a $[0.0, 1.0]$ range, and then added together directly for duplicate document IDs:
+#### 1. Simple Addition Fusion *(Chosen Stage-1 Baseline)*
+* **How it works**: Raw scores are normalized to a $[0.0, 1.0]$ range using Min-Max scaling, and added together directly for duplicate document IDs:
   $$\text{Final Score} = S_{\text{normalized\_dense}} + S_{\text{normalized\_sparse}}$$
-* **Limitation**: It treats both retrieval systems as equally important. It has no way of prioritizing one model over another. If one retrieval run has lower quality results, it introduces ranking noise that pushes irrelevant documents to the top.
+* **Limitation**: Outlier sensitivity and equal weighting bias.
 
-#### 2. Weighted Linear Fusion *(Parametric)*
-* **How it works**: Introduces weighting coefficients (hyperparameters) like $\alpha$ (alpha) and $\beta$ (beta) to scale the influence of each retriever:
-  $$\text{Final Score} = \alpha \cdot S_{\text{normalized\_dense}} + \beta \cdot S_{\text{normalized\_sparse}}$$
-  *(Usually constrained where $\alpha + \beta = 1.0$, simplifying to: $\alpha \cdot S_{\text{dense}} + (1 - \alpha) \cdot S_{\text{sparse}}$)*
-* **Limitation**: Finding the optimal values for $\alpha$ and $\beta$ requires extensive offline testing, grid searches, and domain-specific validation datasets. A weight balance that works well for short keyword queries might perform poorly for long, conversational questions.
-
-#### 3. Reciprocal Rank Fusion (RRF) *(Rank-Based)*
-* **How it works**: Ignores raw scores entirely. It merges document candidates based on their rank positions (1st, 2nd, 3rd, etc.) in the individual lists using a decay formula:
-  $$RRF(d \in D) = \sum_{m \in M} \frac{1}{k + r_m(d)}$$
-  *(where $r_m(d)$ is the rank of document $d$ in system $m$, and $k$ is a constant, typically $60$, that prevents low ranks from dominating)*
-* **Advantage**: It is highly robust to outliers because it is score-independent. It does not require score normalization or complex parameter tuning.
+#### 2. Compensating for Basic Fusion: The Cross-Encoder Safeguard
+In this project, we implement a **Two-Stage Multi-Stage Retrieval Architecture**:
+1. **Stage 1 (High Recall)**: Hybrid search retrieves 10 candidates using Min-Max addition fusion.
+2. **Stage 2 (High Precision Safeguard)**: All 10 candidates are passed to a **Cross-Encoder Reranker** (`cross-encoder/ms-marco-MiniLM-L-6-v2`). The Cross-Encoder evaluates full token-to-token cross-attention between query and passage, correcting any ranking errors from Stage 1 and selecting the top 3 highest-quality chunks.
 
 ---
 
-### Compensating for Basic Fusion: The Cross-Encoder Safeguard
-In this project, we implemented **Simple Addition Fusion** (the basic, non-parametric method). In a standalone retrieval system, this could risk delivering irrelevant context to the LLM due to score-scaling bias and ranking noise. 
+## 6. Multi-Tenancy & Role-Based Vector Access Control
 
-However, we built a highly resilient system by implementing a **Multi-Stage Retrieval Architecture**:
-
-1. **Stage 1 (High Recall / Low Precision)**: The hybrid search retrieves a candidate list (top 5). We use basic Min-Max normalization and Simple Addition fusion here because it is computationally cheap and simple to execute.
-2. **Stage 2 (High Precision Safeguard)**: The candidate list is passed to a **Cross-Encoder Reranker** (`ms-marco-MiniLM-L-6-v2`). The Cross-Encoder performs token-level attention comparison, re-scoring each chunk's direct relevance to the query.
-
-#### Why this is a powerful pattern:
-The **Cross-Encoder Reranker** acts as a high-fidelity filter. It corrects any ranking errors, noise, or bias introduced during the simple addition fusion stage. Even if the basic fusion method places an irrelevant chunk at rank 1, the Cross-Encoder will identify the lack of direct query-document alignment, re-score it negatively, and push the truly relevant context to the top before the prompt is sent to the LLM. 
-
-This design pattern gives us the simplicity and speed of basic addition fusion during database retrieval, while guaranteeing high-precision contexts via reranking.
-
----
-
-## 5. Multi-Stage Retrieval & Cross-Encoder Reranking
-
-RAG architectures balance search speed and scoring accuracy using a multi-stage approach:
-
-### A. Stage 1: Retrieval (Bi-Encoder)
-* Uses a **Bi-Encoder** configuration where documents and queries are encoded independently. 
-* This allows documents to be indexed in a vector database beforehand. Searches are fast but lack direct interaction between query and document tokens.
-
-### B. Stage 2: Reranking (Cross-Encoder)
-* Uses a **Cross-Encoder** configuration that processes the query and document *together* through self-attention layers.
-* Self-attention evaluates token-to-token interactions directly (e.g., how the word "it" in the document relates to "overfitting" in the query). This is highly accurate but computationally heavy, which is why it is used as a second-stage filter on only a small subset of candidate chunks (e.g., re-scoring top 5 down to top 3).
-
-```
-[ Database (1000s of chunks) ] ──► (Bi-Encoder Search) ──► Top 5 Chunks ──► (Cross-Encoder Rerank) ──► Top 3 Chunks to LLM
-```
+Enterprise RAG applications require strict data isolation across multiple organizations and users.
+* **The Vulnerability**: Simple vector databases query all points globally, creating cross-tenant data leakage risks.
+* **Our Solution**: Every vector point stored in Qdrant contains payload metadata:
+  ```json
+  {
+    "tenant_id": "tenant_default",
+    "user_id": "usr_admin",
+    "source": "machine_learning.pdf"
+  }
+  ```
+* **Payload Pre-Filtering**: When querying Qdrant, we apply hard Boolean filters *before* semantic similarity search:
+  ```python
+  Filter(
+      must=[
+          FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
+          FieldCondition(key="user_id", match=MatchValue(value=user_id))
+      ]
+  )
+  ```
+  This guarantees that vectors outside the user's authorization are completely invisible to the search engine.
 
 ---
 
-## 6. Quantization and GGUF Local Inference
+## 7. Quantization, Local Inference & Multi-Provider Architecture
 
-### Quantization
-**Quantization** is a model compression technique that converts weight values from high-precision floating-point formats (e.g., 16-bit float, `FP16`) to lower precision representations (e.g., 4-bit integer, `Q4`). 
-* Quantizing a model reduces its RAM footprint and storage size by ~70%, enabling large language models (like the 7-billion parameter Qwen 2.5) to run locally on consumer computers.
+### Quantization & GGUF
+* **Quantization**: Compresses 16-bit float weights (`FP16`) to 4-bit integers (`Q4_K_M`), shrinking the 7B parameter Qwen model from 14GB+ to ~4.7GB RAM footprint.
+* **Llama.cpp**: C++ inference engine exposing an OpenAI-compatible `/v1` endpoint on port 8080 with GPU offloading (`-ngl`).
 
-### GGUF Format & Llama.cpp
-* **GGUF** is a binary file format designed for fast model loading and efficient split execution across GPU and CPU.
-* **Llama.cpp** is a C++ inference engine that compiles GGUF models locally. It uses split offloading (`-ngl` parameter) to load a subset of layers into GPU VRAM while managing the remaining layers in system CPU memory.
-
----
-
-## 7. RAG Evaluation Frameworks: RAGAS vs. DeepEval
-
-Evaluating RAG performance utilizes an **LLM-as-a-Judge** framework to score four key metrics:
-
-```
-                  ┌──────────────────────┐
-                  │    User Question     │
-                  └──────────┬───────────┘
-            Answer Relevancy │ Context Precision
-     ┌───────────────────────┼───────────────────────┐
-     ▼                       ▼                       ▼
-┌──────────┐ Context   ┌──────────┐ Faithfulness ┌──────────┐
-│ Generated│◄──────────│Retrieved │◄────────────►│  Ground  │
-│  Answer  │  Recall   │ Context  │              │  Truth   │
-└──────────┘           └──────────┘              └──────────┘
-```
-
-### The 4 Core RAGAS Metrics
-1. **Faithfulness** (Hallucination checker): Measures if the generated answer is derived *only* from the retrieved context.
-   $$\text{Faithfulness Score} = \frac{\text{Number of statements in answer supported by context}}{\text{Total number of statements in generated answer}}$$
-2. **Answer Relevancy** (Response quality): Evaluates if the generated answer directly addresses the query. Calculated by prompting a judge LLM to formulate hypothetical questions from the answer and measuring their vector similarity to the original query.
-3. **Context Precision** (Retrieval order accuracy): Checks if the retrieved chunks containing relevant information are ranked at the top of the search results.
-4. **Context Recall** (Retrieval completeness): Evaluates if all the information required to answer the question is present in the retrieved chunks by comparing the chunks to the reference ground truth.
+### Multi-Provider Flexibility
+In `rag_pipeline.py`, we implement a dynamic provider switch:
+* **`LLM_PROVIDER=local`**: Routes to local llama.cpp (`Qwen2.5-7B`) at `$0.00` API cost and 100% offline privacy.
+* **`LLM_PROVIDER=groq`**: Routes to Groq cloud API (`llama-3.3-70b-versatile`) for ultra-low latency server execution.
 
 ---
 
-### DeepEval: Extending RAG Evaluation
+## 8. Server-Sent Events (SSE) Streaming & FinOps Observability
 
-While **RAGAS** provides standard mathematical formulations for RAG components, **DeepEval** is an open-source enterprise-grade LLM evaluation framework designed for regression testing and continuous integration (CI/CD). It extends RAGAS capabilities in several key ways:
+### Why SSE Streaming Matters:
+Traditional blocking REST endpoints force the user to stare at a blank screen for 4–6 seconds while the entire response is synthesized. 
+* **Server-Sent Events (SSE)**: Streams text tokens chunk-by-chunk in real time (`/chat/stream`), reducing perceived **Time-To-First-Token (TTFT)** to under **350ms**.
 
-```
-                   ┌──────────────────────────────────────┐
-                   │               DeepEval               │
-                   └──────────────────┬───────────────────┘
-         ┌────────────────────────────┼────────────────────────────┐
-         ▼                            ▼                            ▼
-  Unit Testing & CI/CD          G-Eval Framework              Comprehensive
-  Integrates with Pytest to     Enables custom evaluator      Guardrails
-  run evaluations as test       criteria based on natural     Checks for toxicity,
-  assertions.                   language guidelines.          bias, and compliance.
-```
-
-1. **Unit Testing Integration (Pytest support)**: DeepEval allows developers to write evaluations as Python unit tests using Pytest. A test fails if a score drops below a set threshold, enabling automated regression checks in production deployment pipelines:
-   ```python
-   # Example DeepEval assertion
-   assert faithfulness_metric.score >= 0.8, "Answer contains hallucinations!"
-   ```
-2. **G-Eval (Custom Evaluators)**: DeepEval implements **G-Eval**, a framework that enables developers to define custom evaluation criteria using simple natural language instructions. The framework automatically converts these guidelines into scoring criteria executed by the LLM judge.
-3. **Broader Guardrail Metrics**: Beyond standard retrieval metrics, DeepEval includes built-in guardrail metrics such as:
-   - **Toxicity**: Evaluates if the LLM response contains offensive or harmful language.
-   - **Bias**: Identifies gender, racial, or political bias in generations.
-   - **Conversational Alignment**: Evaluates multi-turn conversation memory and consistency.
-4. **Vast SDK Backends**: DeepEval supports a broader range of local and cloud LLM APIs natively, providing comprehensive dashboards for tracking historical experiment runs.
+### FinOps Telemetry Drawer
+The frontend tracks and displays real-time operational telemetry for every response:
+* **TTFT (ms)**: Milliseconds from request dispatch until the first token appears.
+* **Token Breakdown**: `Tokens: Total [Q: prompt_tokens | R: completion_tokens]`.
+* **Cost Estimation (USD)**: Calculated dynamically using model pricing matrices (e.g. \$0.00 for local Qwen; \$0.59 / \$0.79 per 1M tokens for Llama-3.3-70B).
 
 ---
 
-## 8. LLM Application Observability and Tracing (LangSmith)
+## 9. Enterprise RAG Quality Evaluation: The Zero-Cost Local RAG Triad
 
-### Definition
-In traditional software, execution paths are deterministic and tracked via call logs. In LLM applications, execution involves multiple nested API requests, complex prompts, dynamic database searches, and non-deterministic text generation. **Observability** is the practice of tracking and monitoring these nested steps. **LangSmith** is a developer platform designed to debug, test, and monitor LLM pipelines.
+Traditional evaluation relies on **LLM-as-a-Judge** (asking GPT-4 or Groq to score responses). In production, this causes massive problems:
+* **Cloud API Throttles (HTTP 429)**: Quota exhaustion when evaluating batch test suites.
+* **Non-Determinism**: Generative judge scores drift due to sampling temperature.
+* **The "Ground Truth Illusion"**: Relying on synthetic ground truths penalizes correct answers due to harmless lexical wording differences.
 
-### How Tracing Works
-In this project, the RAG execution function in `rag_pipeline.py` is marked with the `@traceable` decorator:
-```python
-@traceable
-async def generate_answer(query: str):
-    ...
 ```
-This decorator hooks into the Python runtime. When `generate_answer()` is called, LangSmith automatically logs:
-* The input query string.
-* The nested execution chain (recording exactly when `hybrid_search()` starts, when Qdrant is queried, when the Cross-Encoder starts, and when llama.cpp is invoked).
-* The latencies of each individual step, allowing developers to locate performance bottlenecks.
-* Token count consumption and prompt text payloads sent to llama.cpp, enabling audit trails and visual debugging of the execution history on the LangSmith dashboard.
+                                    ┌──────────────────────┐
+                                    │    1. USER QUERY     │
+                                    └──────────┬───────────┘
+                                               │
+                                 Answer        │  Context
+                                 Relevancy     │  Relevance
+                                 (Directness)  │  (Retrieval Signal)
+                                               │
+                         ┌─────────────────────┴─────────────────────┐
+                         ▼                                           ▼
+              ┌─────────────────────┐   Faithfulness      ┌─────────────────────┐
+              │ 2. GENERATED ANSWER │◄────────────────────│ 3. RETRIEVED CONTEXT│
+              └─────────────────────┘   (Anti-Hallucination)└─────────────────────┘
+```
+
+### The Solution: The Reference-Free Local RAG Triad (`evaluations/fast_eval.py`)
+1. **Faithfulness (Anti-Hallucination)**: Uses 768D Bi-Encoder embeddings (`BAAI/bge-base-en-v1.5`) to verify that each proposition in the generated answer is mathematically entailed within the retrieved context chunks ($\text{sim} \ge 0.60$). Zero external API calls, zero hallucination in grading.
+2. **Answer Relevancy**: Computes cosine similarity between user query and generated answer vectors.
+3. **Context Relevance**: Measures the signal-to-noise ratio of retrieved chunks against the query.
+4. **Context Recall**: (Optional offline check) Evaluates coverage against gold-standard references in `test_dataset.py`.
+* **Permanent Text Reporting**: Automatically saves human-readable audit logs to `evaluations/evaluation_report.txt` with timestamps, metrics, and PASS/WARN status.
 
 ---
+
+## 10. LangSmith Tracing & Observability
+
+The pipeline is wrapped with the `@traceable` decorator from LangSmith:
+* Tracks nested latency breakdowns across retrieval, reranking, and generation.
+* Logs complete payload prompts, chunk IDs, and token usage for visual debugging in the LangSmith dashboard.
