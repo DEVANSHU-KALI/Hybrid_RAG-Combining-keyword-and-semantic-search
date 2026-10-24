@@ -2,6 +2,7 @@ import os
 import re
 import time
 import asyncio
+from datetime import datetime
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
@@ -20,6 +21,7 @@ load_dotenv()
 # 1. 768D Bi-Encoder (BAAI/bge-base-en-v1.5) for vector directional metrics.
 # 2. Local Cross-Encoder (ms-marco-MiniLM-L-6-v2) for factual cross-attention.
 # Executes the complete RAG Triad in < 1 second with 100% determinism.
+# Exports results to both Excel and a permanent human-readable .txt audit report.
 # =====================================================================
 
 print("Initializing local evaluator models (100% Free, Zero Cloud APIs)...")
@@ -29,12 +31,10 @@ cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 def split_into_propositions(text: str) -> list[str]:
     """Splits a response into standalone factual propositions/sentences."""
-    # Split by standard sentence terminators while preserving clean text
     raw_sentences = re.split(r'(?<=[.!?])\s+', text.strip())
     clean = []
     for s in raw_sentences:
         s_clean = s.strip()
-        # Filter out markdown formatting headers or empty snippets
         if len(s_clean) > 15 and not s_clean.startswith("|") and not s_clean.startswith("#"):
             clean.append(s_clean)
     return clean if clean else [text.strip()]
@@ -51,28 +51,23 @@ def compute_faithfulness(answer: str, contexts: list[str]) -> float:
         return 0.0
 
     full_context = " ".join(contexts)
-    # Form cross-encoder pairs [Context, Proposition]
     pairs = [[full_context, prop] for prop in propositions]
     scores = cross_encoder.predict(pairs)
 
-    # Sigmoid normalization for raw logits
     probs = 1.0 / (1.0 + np.exp(-np.array(scores)))
-    
-    # Proposition is considered grounded if probability meets semantic threshold
     grounded_count = sum(1 for p in probs if p >= 0.40)
     return round(float(grounded_count / len(propositions)), 4)
 
 
 def compute_answer_relevancy(query: str, answer: str) -> float:
     """
-    Evaluates semantic directional alignment between the user query and the generated answer.
+    Evaluates semantic directional alignment between user query and generated answer.
     Uses 768D Bi-Encoder embeddings and cosine similarity.
     Returns: Cosine similarity score [0.0 - 1.0].
     """
     query_emb = bi_encoder.encode(query, normalize_embeddings=True)
     answer_emb = bi_encoder.encode(answer, normalize_embeddings=True)
     cosine_sim = float(np.dot(query_emb, answer_emb))
-    # Clip to valid probability bounds [0.0, 1.0]
     return round(max(0.0, min(1.0, cosine_sim)), 4)
 
 
@@ -107,9 +102,78 @@ def compute_context_recall(ground_truth: str, contexts: list[str]) -> float:
     return round(float(covered / len(gt_sentences)), 4)
 
 
+def generate_text_audit_report(results: list[dict], df: pd.DataFrame, total_duration: float, timestamp_str: str) -> str:
+    """
+    Constructs a formatted, human-readable text audit report containing full
+    evaluations details, individual Q&A scores, and overall health status.
+    """
+    report_lines = [
+        "=" * 88,
+        "ENTERPRISE HYBRID RAG: AUTOMATED QUALITY EVALUATION REPORT",
+        "=" * 88,
+        f"Execution Timestamp : {timestamp_str}",
+        "Framework           : Local Zero-Cost ($0.00) RAG Triad Evaluator",
+        "Evaluator Models    : BAAI/bge-base-en-v1.5 (768D) + ms-marco-MiniLM-L-6-v2 (Cross-Encoder)",
+        f"Total Queries Tested: {len(results)}",
+        f"Total Run Time      : {total_duration} seconds",
+        "Cloud API Cost      : $0.00 (100% Offline & Local)",
+        "=" * 88,
+        "",
+        "-" * 88,
+        "INDIVIDUAL QUERY EVALUATION BREAKDOWN",
+        "-" * 88,
+    ]
+
+    for idx, r in enumerate(results, start=1):
+        faith_status = "PASS" if r['faithfulness'] >= 0.85 else "WARN"
+        rel_status = "PASS" if r['answer_relevancy'] >= 0.80 else "WARN"
+        ctx_rel_status = "PASS" if r['context_relevance'] >= 0.60 else "WARN"
+        recall_val = f"{r['context_recall']:.4f}" if r['context_recall'] is not None else "N/A"
+
+        report_lines.extend([
+            f"\n[{idx}/{len(results)}] QUESTION: {r['question']}",
+            f"ANSWER:\n{r['raw_answer']}",
+            "",
+            "METRICS:",
+            f"  • Faithfulness (Anti-Hallucination)    : {r['faithfulness']:.4f}  [Threshold >= 0.85] -> {faith_status}",
+            f"  • Answer Relevancy (Directness)        : {r['answer_relevancy']:.4f}  [Threshold >= 0.80] -> {rel_status}",
+            f"  • Context Relevance (Retrieval Signal) : {r['context_relevance']:.4f}  [Threshold >= 0.60] -> {ctx_rel_status}",
+            f"  • Context Recall (Ground Truth Match)  : {recall_val}",
+            f"  • Generation Latency                   : {r['generation_time_s']}s",
+            "-" * 88
+        ])
+
+    mean_faith = df['faithfulness'].mean()
+    mean_rel = df['answer_relevancy'].mean()
+    mean_ctx = df['context_relevance'].mean()
+    mean_rec = df['context_recall'].mean() if "context_recall" in df and df["context_recall"].notnull().any() else 0.0
+
+    overall_status = "PASSED ALL BENCHMARK GATES" if (mean_faith >= 0.85 and mean_rel >= 0.80) else "NEEDS REVIEW"
+
+    report_lines.extend([
+        "",
+        "=" * 88,
+        "OVERALL PIPELINE QUALITY & SYSTEM HEALTH SUMMARY",
+        "=" * 88,
+        f"• Mean Faithfulness (Groundedness)    : {mean_faith:.4f}  (Threshold >= 0.85) -> {'HEALTHY' if mean_faith >= 0.85 else 'ACTION NEEDED'}",
+        f"• Mean Answer Relevancy (Directness)  : {mean_rel:.4f}  (Threshold >= 0.80) -> {'HEALTHY' if mean_rel >= 0.80 else 'ACTION NEEDED'}",
+        f"• Mean Context Relevance (Precision)  : {mean_ctx:.4f}  (Threshold >= 0.60) -> {'HEALTHY' if mean_ctx >= 0.60 else 'ACTION NEEDED'}",
+        f"• Mean Context Recall (Completeness)  : {mean_rec:.4f}  (Threshold >= 0.80)",
+        f"• System Benchmark Verdict            : {overall_status}",
+        f"• Audit Completed At                  : {timestamp_str}",
+        "=" * 88,
+        ""
+    ])
+
+    return "\n".join(report_lines)
+
+
 async def run_fast_evaluation():
+    timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     print("\n=======================================================")
     print("   RUNNING LOCAL ZERO-COST ($0.00) RAG TRIAD EVALUATION ")
+    print(f"   Execution Timestamp: {timestamp_str}")
     print("=======================================================")
 
     start_eval_time = time.time()
@@ -137,6 +201,7 @@ async def run_fast_evaluation():
 
         results.append({
             "question": question,
+            "raw_answer": answer,
             "answer": answer.replace("\n", " "),
             "faithfulness": faith_score,
             "answer_relevancy": relevancy_score,
@@ -165,11 +230,21 @@ async def run_fast_evaluation():
     print(f"• Total Evaluation Run Time:          {total_duration}s")
     print(f"• Cloud API Cost:                     $0.00 (100% Offline & Local)")
 
-    output_dir = os.path.join(os.path.dirname(__file__), "evaluation_results")
+    # 1. Save Human-Readable Text Audit Report directly in evaluations/ folder
+    eval_dir = os.path.dirname(__file__)
+    txt_report_path = os.path.join(eval_dir, "evaluation_report.txt")
+    text_report_content = generate_text_audit_report(results, df, total_duration, timestamp_str)
+    
+    with open(txt_report_path, "w", encoding="utf-8") as f:
+        f.write(text_report_content)
+    print(f"\n📄 Permanent Text Report saved to: {txt_report_path}")
+
+    # 2. Save Spreadsheet Report in evaluations/evaluation_results/
+    output_dir = os.path.join(eval_dir, "evaluation_results")
     os.makedirs(output_dir, exist_ok=True)
     excel_path = os.path.join(output_dir, "fast_eval_results.xlsx")
-    df.to_excel(excel_path, index=False)
-    print(f"\n✅ Benchmark report saved to: {excel_path}\n")
+    df.drop(columns=["raw_answer"]).to_excel(excel_path, index=False)
+    print(f"📊 Benchmark Excel Sheet saved to: {excel_path}\n")
 
 
 if __name__ == "__main__":
